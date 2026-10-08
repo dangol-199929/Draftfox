@@ -1,10 +1,11 @@
 import { generateText, streamText } from "./ollama.ts";
-import { SYSTEM_PROMPT, buildPostPrompt, type PostInput } from "./prompts.ts";
+import { buildPostPrompt, type PostInput } from "./prompts.ts";
+import { getSystemPrompt } from "./settings.ts";
 
 export async function generateLinkedInPost(input: PostInput): Promise<string> {
-  return generateText(buildPostPrompt(input), SYSTEM_PROMPT);
+  return generateText(buildPostPrompt(input), await getSystemPrompt());
 }
 
-export function streamLinkedInPost(input: PostInput, signal?: AbortSignal): AsyncGenerator<string> {
-  return streamText(buildPostPrompt(input), SYSTEM_PROMPT, signal);
+export async function* streamLinkedInPost(input: PostInput, signal?: AbortSignal): AsyncGenerator<string> {
+  yield* streamText(buildPostPrompt(input), await getSystemPrompt(), signal);
 }
