@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Check, Copy, Loader2, RefreshCw } from "lucide-react";
+import { useRef, useState } from "react";
+import { Check, Copy, Loader2, RefreshCw, Square } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,32 +32,63 @@ export function GenerateForm() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [lastInput, setLastInput] = useState<PostInput | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const canGenerate = topic.trim() !== "" && !loading;
   const words = post.split(/\s+/).filter(Boolean).length;
 
   async function generate(input: PostInput) {
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setError("");
     setLastInput(input);
     const start = Date.now();
+    let streamed = false;
     try {
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
+        signal: controller.signal,
       });
-      const data = (await response.json()) as { post?: string; error?: string };
-      if (!response.ok || data.post === undefined) {
+      if (!response.ok || !response.body) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error ?? `Request failed with status ${response.status}.`);
       }
-      setPost(data.post);
-      setSeconds((Date.now() - start) / 1000);
+
+      streamed = true;
+      setPost("");
+      setSeconds(null);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value, { stream: true });
+        setPost((current) => current + text);
+      }
     } catch (err) {
-      setError((err as Error).message);
+      // Stopping on purpose keeps the partial post without an error.
+      if (!controller.signal.aborted) {
+        setError(
+          streamed
+            ? "The connection dropped before the post was finished. The partial post is kept."
+            : (err as Error).message,
+        );
+      }
     } finally {
+      if (streamed) {
+        setPost((current) => current.trim());
+        setSeconds((Date.now() - start) / 1000);
+      }
       setLoading(false);
+      abortRef.current = null;
     }
+  }
+
+  function stop() {
+    abortRef.current?.abort();
   }
 
   function submit() {
@@ -155,16 +186,16 @@ export function GenerateForm() {
               </ToggleGroup>
             </div>
 
-            <Button type="submit" disabled={!canGenerate}>
-              {loading ? (
-                <>
-                  <Loader2 className="animate-spin" />
-                  Writing…
-                </>
-              ) : (
-                "Generate"
-              )}
-            </Button>
+            {loading ? (
+              <Button type="button" variant="outline" onClick={stop}>
+                <Square />
+                Stop
+              </Button>
+            ) : (
+              <Button type="submit" disabled={!canGenerate}>
+                Generate
+              </Button>
+            )}
           </form>
         </CardContent>
       </Card>
@@ -189,10 +220,11 @@ export function GenerateForm() {
                   aria-label="Generated post"
                   className="min-h-64 leading-relaxed"
                   value={post}
+                  readOnly={loading}
                   onChange={(event) => setPost(event.target.value)}
                 />
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={copy}>
+                  <Button variant="outline" size="sm" disabled={loading || !post} onClick={copy}>
                     {copied ? <Check /> : <Copy />}
                     {copied ? "Copied" : "Copy"}
                   </Button>
@@ -202,11 +234,20 @@ export function GenerateForm() {
                     disabled={loading || !lastInput}
                     onClick={() => lastInput && generate(lastInput)}
                   >
-                    <RefreshCw className={loading ? "animate-spin" : undefined} />
+                    <RefreshCw />
                     Regenerate
                   </Button>
-                  <span className="ml-auto text-xs text-muted-foreground">
-                    {words} words{seconds !== null && ` · ${seconds.toFixed(1)}s`}
+                  <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+                    {loading ? (
+                      <>
+                        <Loader2 className="size-3 animate-spin" />
+                        Writing… {words} words
+                      </>
+                    ) : (
+                      <>
+                        {words} words{seconds !== null && ` · ${seconds.toFixed(1)}s`}
+                      </>
+                    )}
                   </span>
                 </div>
               </div>

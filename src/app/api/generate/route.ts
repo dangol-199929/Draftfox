@@ -1,4 +1,4 @@
-import { generateLinkedInPost } from "@/lib/post.ts";
+import { streamLinkedInPost } from "@/lib/post.ts";
 import type { PostInput } from "@/lib/prompts.ts";
 
 export const runtime = "nodejs";
@@ -17,12 +17,41 @@ export async function POST(request: Request) {
   const result = parseInput(body);
   if (typeof result === "string") return badRequest(result);
 
+  // Wait for the first chunk so Ollama errors still come back as JSON with a 503.
+  const chunks = streamLinkedInPost(result, request.signal);
+  let next: IteratorResult<string> | null;
   try {
-    const post = await generateLinkedInPost(result);
-    return Response.json({ post });
+    next = await chunks.next();
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 503 });
   }
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        next ??= await chunks.next();
+      } catch (error) {
+        // Headers are already sent, so break the stream; the client keeps the partial post and shows an alert.
+        if (!request.signal.aborted) console.error("Post generation failed mid-stream:", error);
+        controller.error(error);
+        return;
+      }
+      if (next.done) {
+        controller.close();
+      } else {
+        controller.enqueue(encoder.encode(next.value));
+      }
+      next = null;
+    },
+    async cancel() {
+      await chunks.return(undefined);
+    },
+  });
+
+  return new Response(stream, {
+    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-cache" },
+  });
 }
 
 // Returns the cleaned input, or an error message naming the bad field.
