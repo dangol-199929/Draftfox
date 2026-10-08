@@ -5,7 +5,14 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export const POSTING_SCOPE = "w_member_social";
-export const SCOPE = `openid profile email ${POSTING_SCOPE}`;
+// Sign-in asks only for the basic scopes. Posting is a separate opt-in, because LinkedIn refuses the
+// whole sign-in if w_member_social is requested before "Share on LinkedIn" is added to the app.
+export const BASIC_SCOPE = "openid profile email";
+export type LoginMode = "basic" | "posting";
+
+export function scopeFor(mode: LoginMode): string {
+  return mode === "posting" ? `${BASIC_SCOPE} ${POSTING_SCOPE}` : BASIC_SCOPE;
+}
 export const STATE_COOKIE = "linkedin_oauth_state";
 
 const AUTHORIZE_URL = "https://www.linkedin.com/oauth/v2/authorization";
@@ -64,19 +71,20 @@ export function getConfig(): LinkedInConfig | null {
   return { clientId, clientSecret, redirectUri };
 }
 
-export function authorizeUrl(config: LinkedInConfig, state: string): string {
+export function authorizeUrl(config: LinkedInConfig, state: string, mode: LoginMode): string {
   const params = new URLSearchParams({
     response_type: "code",
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
     state,
-    scope: SCOPE,
+    scope: scopeFor(mode),
   });
   return `${AUTHORIZE_URL}?${params}`;
 }
 
 // Swaps the one-time code from the callback for an access token, then reads the profile and saves both.
-export async function connect(config: LinkedInConfig, code: string): Promise<void> {
+export async function connect(config: LinkedInConfig, code: string, mode: LoginMode): Promise<void> {
+  const requestedScope = scopeFor(mode);
   const tokenResponse = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -109,7 +117,7 @@ export async function connect(config: LinkedInConfig, code: string): Promise<voi
   await saveConnection({
     accessToken: token.access_token,
     expiresAt: new Date(now + token.expires_in * 1000).toISOString(),
-    scope: token.scope ?? SCOPE,
+    scope: token.scope ?? requestedScope,
     connectedAt: new Date(now).toISOString(),
     profile: { sub: user.sub, name: user.name, email: user.email, picture: user.picture },
   });
@@ -150,7 +158,7 @@ export async function disconnect(): Promise<void> {
   await rm(CONNECTION_FILE, { force: true });
 }
 
-// LinkedIn returns the granted scopes comma-separated ("email,openid,profile"); SCOPE uses spaces.
+// LinkedIn returns the granted scopes comma-separated ("email,openid,profile"); scopeFor uses spaces.
 function hasPostingScope(scope: string): boolean {
   return scope.split(/[\s,]+/).includes(POSTING_SCOPE);
 }
@@ -205,7 +213,7 @@ async function requirePostingConnection(): Promise<Connection> {
   if (!hasPostingScope(connection.scope)) {
     throw new LinkedInError(
       403,
-      'Posting isn\'t enabled. Add "Share on LinkedIn" to your LinkedIn app, then reconnect on the LinkedIn page.',
+      'Posting isn\'t enabled. Add "Share on LinkedIn" to your LinkedIn app, then click Enable posting on the LinkedIn page.',
     );
   }
   return connection;
@@ -230,7 +238,7 @@ async function postsRequest(connection: Connection, path: string, init: RequestI
     case 403:
       throw new LinkedInError(
         403,
-        'LinkedIn refused: posting permission is missing. Add "Share on LinkedIn" to your LinkedIn app, then reconnect.',
+        'LinkedIn refused: posting permission is missing. Add "Share on LinkedIn" to your LinkedIn app, then click Enable posting on the LinkedIn page.',
       );
     case 426:
       throw new LinkedInError(

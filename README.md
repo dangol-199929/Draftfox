@@ -26,7 +26,7 @@ Then open http://localhost:3000.
 - **Generate** (`/`): enter a topic, your real experience, audience, tone and length. The post streams in as the model writes it; you can stop it, edit it, copy it or regenerate it. If the topic is too vague, the model asks a few questions instead of inventing details.
 - **Profile** (`/profile`): optional facts about you and examples of your past posts, so drafts sound like you. Fill it in by hand or import your LinkedIn data (see below).
 - **Prompt** (`/prompt`): edit the system prompt, the standing rules the model follows for every post. Save, discard changes, or reset to the built-in default.
-- **LinkedIn** (`/linkedin`): connect your LinkedIn account with Sign In with LinkedIn, which also enables posting. Optional; see below.
+- **LinkedIn** (`/linkedin`): connect your LinkedIn account with Sign In with LinkedIn, and optionally enable posting. See below.
 
 ## Profile and LinkedIn data import (optional)
 
@@ -48,15 +48,15 @@ Only needed for the LinkedIn page.
 1. **Company Page.** LinkedIn developer apps must belong to a Company Page. If you don't admin one, create a free page: on linkedin.com, open **For Business**, then **Create a Company Page**.
 2. **Developer app.** Go to [linkedin.com/developers/apps](https://www.linkedin.com/developers/apps), click **Create app**, pick your Company Page and upload any square logo.
 3. **Verify.** On the app's **Settings** tab, click **Verify** and approve the link as the page admin.
-4. **Products.** On the **Products** tab, add **Sign In with LinkedIn using OpenID Connect** and **Share on LinkedIn** (needed for posting).
+4. **Products.** On the **Products** tab, add **Sign In with LinkedIn using OpenID Connect**. Add **Share on LinkedIn** too if you want to post from the app.
 5. **Redirect URL.** On the **Auth** tab, add `http://localhost:3000/api/linkedin/callback` under *Authorized redirect URLs for your app*. It must match exactly.
 6. **Keys.** Copy the Client ID and Primary Client Secret from the **Auth** tab into `.env` (see below), restart `pnpm dev`, then click **Connect LinkedIn** on the LinkedIn page.
 
-The app asks for the `openid profile email w_member_social` scopes. If you connected before adding **Share on LinkedIn**, click **Reconnect** on the LinkedIn page to enable posting.
+**Connect LinkedIn** asks only for `openid profile email` (name, email, photo). Posting is a separate step: once **Share on LinkedIn** is added to your app, click **Enable posting** on the LinkedIn page, which also asks for `w_member_social`. If LinkedIn refuses that, your existing connection stays as it was.
 
 ## Posting to LinkedIn (optional)
 
-Once connected with posting enabled, a **Post to LinkedIn** button appears under a finished post on the Generate page. It opens a preview of the exact text, a character count (LinkedIn allows 3,000), a choice of **Anyone** or **Connections only**, and a final confirmation. Nothing is posted until you click **Post** in that dialog.
+Once connected and **Enable posting** is done, a **Post to LinkedIn** button appears under a finished post on the Generate page. It opens a preview of the exact text, a character count (LinkedIn allows 3,000), a choice of **Anyone** or **Connections only**, and a final confirmation. Nothing is posted until you click **Post** in that dialog.
 
 After posting you get a **View on LinkedIn** link and an **Undo** button that deletes the post from LinkedIn again.
 

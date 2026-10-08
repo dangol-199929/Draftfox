@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, TriangleAlert } from "lucide-react";
+import { Loader2, Send, TriangleAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -16,11 +16,13 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { LinkedInProfile } from "@/lib/linkedin.ts";
 
 const LOGIN_URL = "/api/linkedin/login";
+const POSTING_LOGIN_URL = "/api/linkedin/login?posting=1";
 
 type Props = {
   configured: boolean;
@@ -93,7 +95,10 @@ export function LinkedInPanel({ configured, connected, expired, canPost, profile
                 <AvatarFallback>{initials(profile.name)}</AvatarFallback>
               </Avatar>
               <div className="grid min-w-0 gap-0.5">
-                <p className="truncate font-medium">{profile.name}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="truncate font-medium">{profile.name}</p>
+                  {canPost && !expired && <Badge variant="secondary">Posting enabled</Badge>}
+                </div>
                 {profile.email && <p className="truncate text-sm text-muted-foreground">{profile.email}</p>}
                 <p className="text-xs text-muted-foreground">
                   Connected {connectedOn}
@@ -103,14 +108,18 @@ export function LinkedInPanel({ configured, connected, expired, canPost, profile
             </div>
 
             {!expired && !canPost && (
-              <Alert>
-                <TriangleAlert />
-                <AlertTitle>Reconnect to enable posting</AlertTitle>
-                <AlertDescription>
-                  To post from this app, add the &quot;Share on LinkedIn&quot; product to your LinkedIn app, then click
-                  Reconnect.
-                </AlertDescription>
-              </Alert>
+              <div className="grid justify-items-start gap-2 rounded-lg border px-3 py-3 text-sm">
+                <p>Want to post from this app? Give it permission to share on your behalf.</p>
+                <p className="text-xs text-muted-foreground">
+                  First add the &quot;Share on LinkedIn&quot; product to your LinkedIn developer app (Products tab).
+                </p>
+                <Button size="sm" asChild>
+                  <a href={POSTING_LOGIN_URL}>
+                    <Send />
+                    Enable posting
+                  </a>
+                </Button>
+              </div>
             )}
 
             {expired && (
@@ -123,7 +132,7 @@ export function LinkedInPanel({ configured, connected, expired, canPost, profile
 
             <div className="flex flex-wrap gap-2">
               <Button variant={expired ? "default" : "outline"} asChild>
-                <a href={LOGIN_URL}>Reconnect</a>
+                <a href={canPost ? POSTING_LOGIN_URL : LOGIN_URL}>Reconnect</a>
               </Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>

@@ -17,6 +17,8 @@ const ERRORS: Record<string, string> = {
   user_cancelled_authorize: "You declined the permissions on LinkedIn. Nothing was connected.",
   unauthorized_scope_error:
     'LinkedIn refused the requested permissions. Make sure "Sign In with LinkedIn using OpenID Connect" is added to your app.',
+  posting_not_enabled:
+    "LinkedIn refused posting permission. Add the 'Share on LinkedIn' product to your developer app (Products tab), then click Enable posting again.",
 };
 
 export default async function LinkedInPage({
@@ -29,6 +31,7 @@ export default async function LinkedInPage({
 
   const errorCode = typeof params.error === "string" ? params.error : null;
   const error = errorCode && (ERRORS[errorCode] ?? `LinkedIn sign-in failed (${errorCode}). Please try again.`);
+  const detail = typeof params.detail === "string" ? params.detail.slice(0, 300) : "";
   const justConnected = params.connected === "1" && status.connected && !errorCode;
 
   const formatDate = (iso: string) => new Date(iso).toLocaleDateString("en", { dateStyle: "medium" });
@@ -55,8 +58,13 @@ export default async function LinkedInPage({
         {error && (
           <Alert variant="destructive">
             <CircleAlert />
-            <AlertTitle>Couldn&apos;t connect LinkedIn</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
+            <AlertTitle>
+              {errorCode === "posting_not_enabled" ? "Couldn't enable posting" : "Couldn't connect LinkedIn"}
+            </AlertTitle>
+            <AlertDescription>
+              <p>{error}</p>
+              {detail && <p className="pt-1 text-xs text-muted-foreground">LinkedIn said: {detail}</p>}
+            </AlertDescription>
           </Alert>
         )}
         <LinkedInPanel
