@@ -26,12 +26,13 @@ type Props = {
   configured: boolean;
   connected: boolean;
   expired: boolean;
+  canPost: boolean;
   profile: LinkedInProfile | null;
   connectedOn: string | null;
   daysLeft: number;
 };
 
-export function LinkedInPanel({ configured, connected, expired, profile, connectedOn, daysLeft }: Props) {
+export function LinkedInPanel({ configured, connected, expired, canPost, profile, connectedOn, daysLeft }: Props) {
   const router = useRouter();
   const [disconnecting, setDisconnecting] = useState(false);
   const [error, setError] = useState("");
@@ -55,7 +56,7 @@ export function LinkedInPanel({ configured, connected, expired, profile, connect
     <Card>
       <CardHeader>
         <CardTitle>Connection</CardTitle>
-        <CardDescription>Read-only access to your basic profile.</CardDescription>
+        <CardDescription>Uses Sign In with LinkedIn and, if enabled, Share on LinkedIn.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
         {error && (
@@ -81,7 +82,7 @@ export function LinkedInPanel({ configured, connected, expired, profile, connect
               <a href={LOGIN_URL}>Connect LinkedIn</a>
             </Button>
             <p className="text-sm text-muted-foreground">
-              We only read your name, email and photo. Nothing is ever posted.
+              We read your name, email and photo. Nothing is posted unless you click Post to LinkedIn and confirm.
             </p>
           </div>
         ) : (
@@ -100,6 +101,17 @@ export function LinkedInPanel({ configured, connected, expired, profile, connect
                 </p>
               </div>
             </div>
+
+            {!expired && !canPost && (
+              <Alert>
+                <TriangleAlert />
+                <AlertTitle>Reconnect to enable posting</AlertTitle>
+                <AlertDescription>
+                  To post from this app, add the &quot;Share on LinkedIn&quot; product to your LinkedIn app, then click
+                  Reconnect.
+                </AlertDescription>
+              </Alert>
+            )}
 
             {expired && (
               <Alert>

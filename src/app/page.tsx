@@ -10,7 +10,7 @@ export default function GeneratePage() {
     <div className="grid gap-6">
       <PageHeader
         title="Generate"
-        description="Write a LinkedIn post draft from your topic and experience. Nothing is posted for you."
+        description="Write a LinkedIn post draft from your topic and experience. Nothing is posted unless you choose to."
       />
       <GenerateForm />
     </div>

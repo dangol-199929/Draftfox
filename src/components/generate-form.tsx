@@ -6,6 +6,7 @@ import { Check, Copy, Info, Loader2, PencilLine, RefreshCw, Square } from "lucid
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PostToLinkedIn } from "@/components/post-to-linkedin";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -300,6 +301,7 @@ export function GenerateForm() {
                     )}
                   </span>
                 </div>
+                <PostToLinkedIn text={post} disabled={loading} />
               </div>
             ) : (
               <p className="py-12 text-center text-sm text-muted-foreground">

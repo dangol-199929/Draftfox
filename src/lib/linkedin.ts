@@ -1,15 +1,25 @@
-// Server-only: Sign In with LinkedIn (OpenID Connect). Reads your name, email and photo; never posts.
+// Server-only: Sign In with LinkedIn (OpenID Connect) plus posting through the Posts API.
+// Nothing is posted unless the user confirms a post in the app.
 // The access token stays in data/linkedin.json on this machine and is never sent to the browser or logged.
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-export const SCOPE = "openid profile email";
+export const POSTING_SCOPE = "w_member_social";
+export const SCOPE = `openid profile email ${POSTING_SCOPE}`;
 export const STATE_COOKIE = "linkedin_oauth_state";
 
 const AUTHORIZE_URL = "https://www.linkedin.com/oauth/v2/authorization";
 const TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken";
 const REVOKE_URL = "https://www.linkedin.com/oauth/v2/revoke";
 const USERINFO_URL = "https://api.linkedin.com/v2/userinfo";
+
+// LinkedIn retires API versions after about a year. 202609 was the newest active one in October 2026.
+export const LINKEDIN_VERSION = "202609";
+// Only overridden in tests, to point the Posts API at a local mock server.
+const API_BASE = process.env.LINKEDIN_API_BASE?.replace(/\/$/, "") || "https://api.linkedin.com";
+
+// LinkedIn's limit for the text of a post.
+export const MAX_POST_LENGTH = 3000;
 
 const DATA_DIR = join(process.cwd(), "data");
 const CONNECTION_FILE = join(DATA_DIR, "linkedin.json");
@@ -39,6 +49,7 @@ export type LinkedInStatus = {
   configured: boolean;
   connected: boolean;
   expired: boolean;
+  canPost: boolean;
   expiresAt: string | null;
   connectedAt: string | null;
   profile: LinkedInProfile | null;
@@ -110,6 +121,7 @@ export async function getStatus(): Promise<LinkedInStatus> {
     configured: getConfig() !== null,
     connected: connection !== null,
     expired: connection !== null && Date.parse(connection.expiresAt) <= Date.now(),
+    canPost: connection !== null && hasPostingScope(connection.scope),
     expiresAt: connection?.expiresAt ?? null,
     connectedAt: connection?.connectedAt ?? null,
     profile: connection?.profile ?? null,
@@ -136,6 +148,113 @@ export async function disconnect(): Promise<void> {
     }
   }
   await rm(CONNECTION_FILE, { force: true });
+}
+
+// LinkedIn returns the granted scopes comma-separated ("email,openid,profile"); SCOPE uses spaces.
+function hasPostingScope(scope: string): boolean {
+  return scope.split(/[\s,]+/).includes(POSTING_SCOPE);
+}
+
+export type Visibility = "PUBLIC" | "CONNECTIONS";
+
+// An Error with the HTTP status from LinkedIn, so routes can pass it on.
+export class LinkedInError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+// Post text uses LinkedIn's "little text format", where these characters have a meaning.
+// Unescaped, they can cut the post short or get it rejected.
+export function escapeLittleText(text: string): string {
+  return text.replace(/[\\|{}@[\]()<>#*_~]/g, "\\$&");
+}
+
+export async function createPost({ text, visibility }: { text: string; visibility: Visibility }): Promise<string> {
+  const connection = await requirePostingConnection();
+  const response = await postsRequest(connection, "/rest/posts", {
+    method: "POST",
+    body: JSON.stringify({
+      author: `urn:li:person:${connection.profile.sub}`,
+      commentary: escapeLittleText(text),
+      visibility,
+      distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] },
+      lifecycleState: "PUBLISHED",
+      isReshareDisabledByAuthor: false,
+    }),
+  });
+  const urn = response.headers.get("x-restli-id");
+  if (!urn) throw new LinkedInError(502, "LinkedIn accepted the post but didn't return its ID.");
+  return urn;
+}
+
+export async function deletePost(urn: string): Promise<void> {
+  const connection = await requirePostingConnection();
+  await postsRequest(connection, `/rest/posts/${encodeURIComponent(urn)}`, { method: "DELETE" });
+}
+
+async function requirePostingConnection(): Promise<Connection> {
+  const connection = await readConnection();
+  if (!connection) throw new LinkedInError(401, "LinkedIn isn't connected. Connect it on the LinkedIn page.");
+  if (Date.parse(connection.expiresAt) <= Date.now()) {
+    throw new LinkedInError(401, "Your LinkedIn access has expired. Reconnect on the LinkedIn page.");
+  }
+  if (!hasPostingScope(connection.scope)) {
+    throw new LinkedInError(
+      403,
+      'Posting isn\'t enabled. Add "Share on LinkedIn" to your LinkedIn app, then reconnect on the LinkedIn page.',
+    );
+  }
+  return connection;
+}
+
+async function postsRequest(connection: Connection, path: string, init: RequestInit): Promise<Response> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${connection.accessToken}`,
+      "LinkedIn-Version": LINKEDIN_VERSION,
+      "X-Restli-Protocol-Version": "2.0.0",
+      "Content-Type": "application/json",
+    },
+  });
+  if (response.ok) return response;
+
+  const detail = await linkedInMessage(response);
+  switch (response.status) {
+    case 401:
+      throw new LinkedInError(401, "Your LinkedIn access has expired or was revoked. Reconnect on the LinkedIn page.");
+    case 403:
+      throw new LinkedInError(
+        403,
+        'LinkedIn refused: posting permission is missing. Add "Share on LinkedIn" to your LinkedIn app, then reconnect.',
+      );
+    case 426:
+      throw new LinkedInError(
+        502,
+        `LinkedIn API version ${LINKEDIN_VERSION} is no longer active. Update LINKEDIN_VERSION in src/lib/linkedin.ts.`,
+      );
+    case 429:
+      throw new LinkedInError(429, "LinkedIn says too many requests. Wait a while and try again.");
+    default:
+      throw new LinkedInError(
+        response.status >= 500 ? 502 : response.status,
+        `LinkedIn rejected the request (${response.status})${detail ? `: ${detail}` : "."}`,
+      );
+  }
+}
+
+async function linkedInMessage(response: Response): Promise<string> {
+  const text = await response.text().catch(() => "");
+  try {
+    const { message } = JSON.parse(text) as { message?: string };
+    return message ?? "";
+  } catch {
+    return text.slice(0, 300);
+  }
 }
 
 async function readConnection(): Promise<Connection | null> {

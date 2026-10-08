@@ -47,7 +47,9 @@ export default async function LinkedInPage({
           <Alert>
             <CheckCircle2 />
             <AlertTitle>LinkedIn connected</AlertTitle>
-            <AlertDescription>Your name, email and photo were read. Nothing is ever posted.</AlertDescription>
+            <AlertDescription>
+              Your name, email and photo were read. Nothing is posted unless you click Post to LinkedIn and confirm.
+            </AlertDescription>
           </Alert>
         )}
         {error && (
@@ -61,6 +63,7 @@ export default async function LinkedInPage({
           configured={status.configured}
           connected={status.connected}
           expired={status.expired}
+          canPost={status.canPost}
           profile={status.profile}
           connectedOn={status.connectedAt ? formatDate(status.connectedAt) : null}
           daysLeft={daysLeft}
