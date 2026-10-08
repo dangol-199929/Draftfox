@@ -24,8 +24,22 @@ Then open http://localhost:3000.
 ## Pages
 
 - **Generate** (`/`): enter a topic, your real experience, audience, tone and length. The post streams in as the model writes it; you can stop it, edit it, copy it or regenerate it. If the topic is too vague, the model asks a few questions instead of inventing details.
+- **Profile** (`/profile`): optional facts about you and examples of your past posts, so drafts sound like you. Fill it in by hand or import your LinkedIn data (see below).
 - **Prompt** (`/prompt`): edit the system prompt, the standing rules the model follows for every post. Save, discard changes, or reset to the built-in default.
 - **LinkedIn** (`/linkedin`): connect your LinkedIn account with Sign In with LinkedIn. Optional; see below.
+
+## Profile and LinkedIn data import (optional)
+
+The Profile page lets the model use true facts about you (headline, current role, skills and a free-text "Facts about me") and up to three of your past posts as writing-style examples. Each can be switched off. The text you type in "Your experience" stays the only source of things that happened; the profile is background only.
+
+To import your data from LinkedIn:
+
+1. On LinkedIn, go to **Me → Settings & Privacy → Data privacy → Get a copy of your data**.
+2. Choose **Want something in particular?**, tick **Profile**, **Positions**, **Skills** and **Shares** (your posts), then **Request archive**.
+3. LinkedIn emails a download link, usually quickly for selected files (the full archive can take up to 24 hours).
+4. Drop the .zip, or the individual CSV files, onto the Profile page.
+
+Only the headline, summary, industry, location, positions, skills, education and your 50 most recent posts are kept. Addresses, birth dates, contacts and messages are ignored, and the upload itself is never saved.
 
 ## LinkedIn setup (optional)
 
@@ -69,6 +83,7 @@ Copy `.env.example` to `.env` and fill in what you need. Everything is optional.
 Everything stays on your computer in the `data/` folder, which is gitignored:
 
 - `data/settings.json`: your edited system prompt, if you changed it.
+- `data/profile.json`: your profile facts and past posts, if you added them. "Delete all profile data" removes it.
 - `data/linkedin.json`: your LinkedIn name, email, photo URL and access token, if you connected. Disconnecting deletes it.
 
 Comparison runs from `pnpm test:posts` go to `outputs/`, also gitignored.

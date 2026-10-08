@@ -1,6 +1,9 @@
 export const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
 export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "gemma4:12b";
 
+// Ollama's default context (4096 tokens) silently cuts long prompts, such as ones with profile examples.
+const OPTIONS = { num_ctx: 8192 };
+
 type ChatResponse = {
   message: { role: string; content: string };
 };
@@ -26,6 +29,7 @@ export async function generateText(
         messages,
         stream: false,
         think: false,
+        options: OPTIONS,
       }),
     });
   } catch {
@@ -89,6 +93,7 @@ export async function* streamText(
         messages,
         stream: true,
         think: false,
+        options: OPTIONS,
       }),
       signal,
     });

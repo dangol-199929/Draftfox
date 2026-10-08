@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Check, Copy, Info, Loader2, PencilLine, RefreshCw, Square } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import type { Profile } from "@/lib/profile.ts";
 import type { PostInput } from "@/lib/prompts.ts";
 
 type Length = NonNullable<PostInput["length"]>;
@@ -38,6 +40,14 @@ export function GenerateForm() {
   const [lastInput, setLastInput] = useState<PostInput | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const experienceRef = useRef<HTMLTextAreaElement>(null);
+  const [profileNote, setProfileNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/profile")
+      .then((response) => response.json() as Promise<{ profile?: Profile; exists?: boolean }>)
+      .then(({ profile, exists }) => setProfileNote(exists && profile ? describeProfileUse(profile) : ""))
+      .catch(() => setProfileNote(null));
+  }, []);
 
   const canGenerate = topic.trim() !== "" && !loading;
   const words = post.split(/\s+/).filter(Boolean).length;
@@ -209,6 +219,14 @@ export function GenerateForm() {
               </Button>
             )}
           </form>
+          {profileNote !== null && (
+            <p className="mt-4 text-xs text-muted-foreground">
+              {profileNote ? `${profileNote} · ` : "Add your profile for more personal posts · "}
+              <Link href="/profile" className="underline underline-offset-2 hover:text-foreground">
+                {profileNote ? "Edit" : "Add profile"}
+              </Link>
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -354,4 +372,22 @@ function CommandLine({ command }: { command: string }) {
       </Button>
     </div>
   );
+}
+
+// Mirrors what buildPostContext sends: facts when on and present, up to 3 past posts as style examples.
+function describeProfileUse(profile: Profile): string {
+  const hasFacts =
+    profile.useFacts &&
+    Boolean(
+      profile.headline ||
+        profile.facts.trim() ||
+        profile.skills.length ||
+        profile.positions.some((position) => !position.finishedOn),
+    );
+  const examples = profile.useStyle ? Math.min(3, profile.posts.length) : 0;
+  const parts = [
+    hasFacts && "your profile facts",
+    examples > 0 && `${examples} style example${examples === 1 ? "" : "s"}`,
+  ].filter(Boolean);
+  return parts.length > 0 ? `Using ${parts.join(" and ")}` : "Profile saved but switched off";
 }
