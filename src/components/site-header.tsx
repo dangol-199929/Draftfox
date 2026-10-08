@@ -16,7 +16,7 @@ export function SiteHeader() {
 
   return (
     <header className="border-b">
-      <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
+      <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
         <Link href="/" className="font-semibold tracking-tight">
           LinkedIn AI Engine
         </Link>
