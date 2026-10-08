@@ -72,3 +72,7 @@ Everything stays on your computer in the `data/` folder, which is gitignored:
 - `data/linkedin.json`: your LinkedIn name, email, photo URL and access token, if you connected. Disconnecting deletes it.
 
 Comparison runs from `pnpm test:posts` go to `outputs/`, also gitignored.
+
+## License
+
+[MIT](LICENSE)

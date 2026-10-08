@@ -2,6 +2,7 @@
   "name": "linkedin-ai-engine",
   "version": "0.1.0",
   "description": "Generate LinkedIn post drafts with a local LLM through Ollama",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "engines": {
