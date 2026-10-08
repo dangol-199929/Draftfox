@@ -1,7 +1,11 @@
-const ollamaUrl = process.env.OLLAMA_URL ?? "http://localhost:11434";
-const model = process.env.OLLAMA_MODEL ?? "gemma4:12b";
+import { generateText, OLLAMA_MODEL } from "./ollama.ts";
 
-console.log("LinkedIn AI Engine");
-console.log(`Node:   ${process.version}`);
-console.log(`Ollama: ${ollamaUrl}`);
-console.log(`Model:  ${model}`);
+console.log(`Asking ${OLLAMA_MODEL}...\n`);
+
+const start = Date.now();
+const text = await generateText(
+  "Explain in two sentences what TypeScript adds to JavaScript.",
+);
+
+console.log(text);
+console.log(`\n(${((Date.now() - start) / 1000).toFixed(1)}s)`);
