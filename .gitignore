@@ -1,4 +1,9 @@
 node_modules/
 .env
+.env*.local
 .DS_Store
 outputs/
+.next/
+next-env.d.ts
+data/
+*.tsbuildinfo

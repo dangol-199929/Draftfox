@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { OLLAMA_MODEL } from "./ollama.ts";
-import { generateLinkedInPost } from "./post.ts";
-import type { PostInput } from "./prompts.ts";
+import { OLLAMA_MODEL } from "../src/lib/ollama.ts";
+import { generateLinkedInPost } from "../src/lib/post.ts";
+import type { PostInput } from "../src/lib/prompts.ts";
 
 // Sample inputs for manually comparing output quality.
 // They are test cases, not real experiences (except the Ollama one).

@@ -11,11 +11,13 @@ Generate LinkedIn post drafts with a local, open-source LLM. Runs fully on your 
 ## Setup
 
 ```bash
-ollama pull gemma4:12b
 nvm use # if you use nvm
 pnpm install
-pnpm start
+ollama pull gemma4:12b
+pnpm dev
 ```
+
+Then open http://localhost:3000.
 
 ## Compare outputs
 
@@ -23,7 +25,7 @@ pnpm start
 pnpm test:posts
 ```
 
-Generates posts from sample inputs and saves them to `outputs/` for side-by-side comparison.
+Runs `scripts/test-posts.ts`: generates posts from sample inputs and saves them to `outputs/` for side-by-side comparison.
 
 ## Settings (optional)
 

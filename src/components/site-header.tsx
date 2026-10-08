@@ -1,0 +1,43 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { cn } from "@/lib/utils";
+
+const links = [
+  { href: "/", label: "Generate" },
+  { href: "/prompt", label: "Prompt" },
+  { href: "/linkedin", label: "LinkedIn" },
+];
+
+export function SiteHeader() {
+  const pathname = usePathname();
+
+  return (
+    <header className="border-b">
+      <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
+        <Link href="/" className="font-semibold tracking-tight">
+          LinkedIn AI Engine
+        </Link>
+        <nav className="order-last flex w-full gap-1 sm:order-none sm:w-auto">
+          {links.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                pathname === link.href && "bg-muted text-foreground",
+              )}
+            >
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+        <div className="ml-auto">
+          <ThemeToggle />
+        </div>
+      </div>
+    </header>
+  );
+}
