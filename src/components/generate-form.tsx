@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Check, Copy, Loader2, RefreshCw, Square } from "lucide-react";
+import { Check, Copy, Info, Loader2, PencilLine, RefreshCw, Square } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,10 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { PostInput } from "@/lib/prompts.ts";
 
 type Length = NonNullable<PostInput["length"]>;
+
+type GenerateError = { message: string; code?: string; model?: string };
+
+const NEED_MORE_CONTEXT = "NEED MORE CONTEXT:";
 
 const LENGTHS: { value: Length; label: string }[] = [
   { value: "short", label: "Short" },
@@ -28,20 +32,22 @@ export function GenerateForm() {
 
   const [post, setPost] = useState("");
   const [seconds, setSeconds] = useState<number | null>(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<GenerateError | null>(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [lastInput, setLastInput] = useState<PostInput | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const experienceRef = useRef<HTMLTextAreaElement>(null);
 
   const canGenerate = topic.trim() !== "" && !loading;
   const words = post.split(/\s+/).filter(Boolean).length;
+  const questions = !loading && post.startsWith(NEED_MORE_CONTEXT) ? parseQuestions(post) : null;
 
   async function generate(input: PostInput) {
     const controller = new AbortController();
     abortRef.current = controller;
     setLoading(true);
-    setError("");
+    setError(null);
     setLastInput(input);
     const start = Date.now();
     let streamed = false;
@@ -53,8 +59,13 @@ export function GenerateForm() {
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
-        const data = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Request failed with status ${response.status}.`);
+        const data = (await response.json().catch(() => ({}))) as Partial<GenerateError> & { error?: string };
+        setError({
+          message: data.error ?? `Request failed with status ${response.status}.`,
+          code: data.code,
+          model: data.model,
+        });
+        return;
       }
 
       streamed = true;
@@ -71,11 +82,11 @@ export function GenerateForm() {
     } catch (err) {
       // Stopping on purpose keeps the partial post without an error.
       if (!controller.signal.aborted) {
-        setError(
-          streamed
+        setError({
+          message: streamed
             ? "The connection dropped before the post was finished. The partial post is kept."
             : (err as Error).message,
-        );
+        });
       }
     } finally {
       if (streamed) {
@@ -106,8 +117,8 @@ export function GenerateForm() {
     <div className="grid gap-6 md:grid-cols-2 md:items-start">
       <Card>
         <CardHeader>
-          <CardTitle>Generate a post</CardTitle>
-          <CardDescription>Drafts only. Nothing is posted to LinkedIn.</CardDescription>
+          <CardTitle>Post details</CardTitle>
+          <CardDescription>Only the topic is required.</CardDescription>
         </CardHeader>
         <CardContent>
           <form
@@ -138,6 +149,7 @@ export function GenerateForm() {
               <Label htmlFor="experience">Your experience</Label>
               <Textarea
                 id="experience"
+                ref={experienceRef}
                 rows={4}
                 value={experience}
                 onChange={(event) => setExperience(event.target.value)}
@@ -201,12 +213,7 @@ export function GenerateForm() {
       </Card>
 
       <div className="grid gap-4">
-        {error && (
-          <Alert variant="destructive">
-            <AlertTitle>Couldn&apos;t generate a post</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        {error && <ErrorAlert error={error} />}
 
         <Card>
           <CardHeader>
@@ -214,7 +221,32 @@ export function GenerateForm() {
             <CardDescription>Edit freely, then copy it into LinkedIn.</CardDescription>
           </CardHeader>
           <CardContent>
-            {post ? (
+            {questions ? (
+              <div className="grid gap-3">
+                <Alert>
+                  <Info />
+                  <AlertTitle>The model needs more context</AlertTitle>
+                  <AlertDescription>
+                    <p>Answer these in “Your experience”, then generate again:</p>
+                    <ul className="mt-1 list-disc space-y-1 pl-5">
+                      {questions.map((question) => (
+                        <li key={question}>{question}</li>
+                      ))}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => experienceRef.current?.focus()}>
+                    <PencilLine />
+                    Add details
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => lastInput && generate(lastInput)}>
+                    <RefreshCw />
+                    Regenerate
+                  </Button>
+                </div>
+              </div>
+            ) : post ? (
               <div className="grid gap-3">
                 <Textarea
                   aria-label="Generated post"
@@ -259,6 +291,67 @@ export function GenerateForm() {
           </CardContent>
         </Card>
       </div>
+    </div>
+  );
+}
+
+// Turns "NEED MORE CONTEXT: 1. Foo? 2. Bar?" (one per line or all on one line) into ["Foo?", "Bar?"].
+function parseQuestions(text: string): string[] {
+  const body = text.slice(NEED_MORE_CONTEXT.length).trim();
+  let lines = body
+    .split("\n")
+    .map((line) => line.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim())
+    .filter(Boolean);
+  if (lines.length === 1) lines = lines[0].split(/(?<=\?)\s+/).filter(Boolean);
+  return lines.length > 0 ? lines : [body];
+}
+
+function ErrorAlert({ error }: { error: GenerateError }) {
+  if (error.code === "ollama_unreachable") {
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>Ollama isn&apos;t running</AlertTitle>
+        <AlertDescription>
+          <p>Open the Ollama app, or start it in a terminal, then try again:</p>
+          <CommandLine command="ollama serve" />
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  if (error.code === "model_missing" && error.model) {
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>The model isn&apos;t downloaded</AlertTitle>
+        <AlertDescription>
+          <p>Download it in a terminal (this takes a few minutes), then try again:</p>
+          <CommandLine command={`ollama pull ${error.model}`} />
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  return (
+    <Alert variant="destructive">
+      <AlertTitle>Couldn&apos;t generate a post</AlertTitle>
+      <AlertDescription>{error.message}</AlertDescription>
+    </Alert>
+  );
+}
+
+function CommandLine({ command }: { command: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    await navigator.clipboard.writeText(command);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="mt-2 flex items-center gap-1 rounded-md bg-muted pl-3 text-foreground">
+      <code className="min-w-0 flex-1 overflow-x-auto py-1.5 font-mono text-xs whitespace-nowrap">{command}</code>
+      <Button variant="ghost" size="icon-sm" aria-label={`Copy "${command}"`} onClick={copy}>
+        {copied ? <Check /> : <Copy />}
+      </Button>
     </div>
   );
 }

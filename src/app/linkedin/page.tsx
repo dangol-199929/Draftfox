@@ -1,7 +1,11 @@
+import type { Metadata } from "next";
 import { CheckCircle2, CircleAlert } from "lucide-react";
 import { LinkedInPanel } from "@/components/linkedin-panel";
+import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getStatus } from "@/lib/linkedin.ts";
+
+export const metadata: Metadata = { title: "LinkedIn" };
 
 const ERRORS: Record<string, string> = {
   not_configured: "LinkedIn isn't set up yet. Add your app's Client ID and secret first (see below).",
@@ -33,29 +37,35 @@ export default async function LinkedInPage({
     : 0;
 
   return (
-    <div className="grid gap-4">
-      {justConnected && (
-        <Alert>
-          <CheckCircle2 />
-          <AlertTitle>LinkedIn connected</AlertTitle>
-          <AlertDescription>Your name, email and photo were read. Nothing is ever posted.</AlertDescription>
-        </Alert>
-      )}
-      {error && (
-        <Alert variant="destructive">
-          <CircleAlert />
-          <AlertTitle>Couldn&apos;t connect LinkedIn</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      <LinkedInPanel
-        configured={status.configured}
-        connected={status.connected}
-        expired={status.expired}
-        profile={status.profile}
-        connectedOn={status.connectedAt ? formatDate(status.connectedAt) : null}
-        daysLeft={daysLeft}
+    <div className="grid gap-6">
+      <PageHeader
+        title="LinkedIn"
+        description="Optional: connect your LinkedIn account with Sign In with LinkedIn."
       />
+      <div className="grid gap-4">
+        {justConnected && (
+          <Alert>
+            <CheckCircle2 />
+            <AlertTitle>LinkedIn connected</AlertTitle>
+            <AlertDescription>Your name, email and photo were read. Nothing is ever posted.</AlertDescription>
+          </Alert>
+        )}
+        {error && (
+          <Alert variant="destructive">
+            <CircleAlert />
+            <AlertTitle>Couldn&apos;t connect LinkedIn</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        <LinkedInPanel
+          configured={status.configured}
+          connected={status.connected}
+          expired={status.expired}
+          profile={status.profile}
+          connectedOn={status.connectedAt ? formatDate(status.connectedAt) : null}
+          daysLeft={daysLeft}
+        />
+      </div>
     </div>
   );
 }

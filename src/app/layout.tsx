@@ -8,7 +8,7 @@ import "./globals.css";
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
-  title: "LinkedIn AI Engine",
+  title: { default: "LinkedIn AI Engine", template: "%s · LinkedIn AI Engine" },
   description: "Generate LinkedIn post drafts with a local LLM through Ollama",
 };
 

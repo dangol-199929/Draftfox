@@ -1,3 +1,4 @@
+import { OLLAMA_MODEL, OllamaError } from "@/lib/ollama.ts";
 import { streamLinkedInPost } from "@/lib/post.ts";
 import type { PostInput } from "@/lib/prompts.ts";
 
@@ -23,7 +24,11 @@ export async function POST(request: Request) {
   try {
     next = await chunks.next();
   } catch (error) {
-    return Response.json({ error: (error as Error).message }, { status: 503 });
+    const code = error instanceof OllamaError ? error.code : "generation_failed";
+    return Response.json(
+      { error: (error as Error).message, code, ...(code === "model_missing" && { model: OLLAMA_MODEL }) },
+      { status: 503 },
+    );
   }
 
   const encoder = new TextEncoder();
@@ -90,5 +95,5 @@ function parseInput(body: unknown): PostInput | string {
 }
 
 function badRequest(error: string) {
-  return Response.json({ error }, { status: 400 });
+  return Response.json({ error, code: "invalid_input" }, { status: 400 });
 }

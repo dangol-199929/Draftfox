@@ -94,9 +94,7 @@ export function PromptEditor() {
       <Card>
         <CardHeader>
           <CardTitle>System prompt</CardTitle>
-          <CardDescription>
-            The standing rules the model follows for every post. Changes apply to the next post you generate.
-          </CardDescription>
+          <CardDescription>Sent to the model before every post request.</CardDescription>
           {saved && (
             <CardAction>
               <Badge variant={saved.isDefault ? "secondary" : "outline"}>

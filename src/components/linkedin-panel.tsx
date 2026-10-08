@@ -54,8 +54,8 @@ export function LinkedInPanel({ configured, connected, expired, profile, connect
   return (
     <Card>
       <CardHeader>
-        <CardTitle>LinkedIn</CardTitle>
-        <CardDescription>Connect your LinkedIn account. We only read your name, email and photo.</CardDescription>
+        <CardTitle>Connection</CardTitle>
+        <CardDescription>Read-only access to your basic profile.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
         {error && (
