@@ -5,7 +5,17 @@ type ChatResponse = {
   message: { role: string; content: string };
 };
 
-export async function generateText(prompt: string): Promise<string> {
+export async function generateText(
+  prompt: string,
+  system?: string,
+): Promise<string> {
+  const messages = system
+    ? [
+        { role: "system", content: system },
+        { role: "user", content: prompt },
+      ]
+    : [{ role: "user", content: prompt }];
+
   let response: Response;
   try {
     response = await fetch(`${OLLAMA_URL}/api/chat`, {
@@ -13,7 +23,7 @@ export async function generateText(prompt: string): Promise<string> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: OLLAMA_MODEL,
-        messages: [{ role: "user", content: prompt }],
+        messages,
         stream: false,
         think: false,
       }),
