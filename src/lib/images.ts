@@ -148,6 +148,9 @@ export async function generateImage(
 }
 
 function imageErrorMessage(status: number, detail: string): string {
+  if (/image generation models are not currently supported/i.test(detail)) {
+    return "This version of Ollama can't make images: Ollama turned image generation off after version 0.32.5 and plans to bring it back later. Post text still works as before.";
+  }
   if (/does not support (generate|image)|not an image|unsupported/i.test(detail)) {
     return `"${IMAGE_MODEL}" can't make images. Set OLLAMA_IMAGE_MODEL to an image model, such as x/flux2-klein.`;
   }
