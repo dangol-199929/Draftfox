@@ -35,7 +35,7 @@ function builtInWorkflow(prompt: string, width: number, height: number, seed: nu
       inputs: { noise: ["73", 0], guider: ["63", 0], sampler: ["61", 0], sigmas: ["62", 0], latent_image: ["66", 0] },
     },
     "65": { class_type: "VAEDecode", inputs: { samples: ["64", 0], vae: ["72", 0] } },
-    "9": { class_type: "SaveImage", inputs: { images: ["65", 0], filename_prefix: "linkedin-ai-engine" } },
+    "9": { class_type: "SaveImage", inputs: { images: ["65", 0], filename_prefix: "draftfox" } },
   };
 }
 

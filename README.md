@@ -1,4 +1,8 @@
-# LinkedIn AI Engine
+# Draftfox
+
+<img src="src/app/icon.svg" alt="Draftfox logo" width="72" height="72">
+
+Local AI for LinkedIn posts: drafts, designed images and scheduling. Free, private and open source.
 
 Generate LinkedIn post drafts with a local, open-source LLM. A small web app that runs fully on your computer through [Ollama](https://ollama.com): no AI API keys, no cloud costs.
 
@@ -143,6 +147,18 @@ Everything stays on your computer in the `data/` folder, which is gitignored:
 - `data/app.db`: a small SQLite database (Node's built-in `node:sqlite`, nothing to install) that keeps what you're working on: the Generate form and current draft, unsaved edits on the Prompt and Profile pages, and each generated post. Generation runs on the server, so it keeps going if you switch pages or reload. They come back when you switch pages or reload. "Start over" on Generate clears the draft; Save or Discard changes clears the unsaved edits.
 
 Comparison runs from `pnpm test:posts` go to `outputs/`, also gitignored.
+
+## Privacy
+
+Draftfox runs on your computer and has no server of its own. Your profile, drafts, images, settings and your LinkedIn access token stay in the `data/` folder on your machine; nothing is sent to the project or anyone else. Text and images are made by local models (Ollama, mflux or ComfyUI). The only thing that leaves your computer is what you publish to LinkedIn, through your own LinkedIn developer app, plus the one-time model downloads.
+
+## Not affiliated with LinkedIn
+
+Draftfox is an independent open-source project. It is not affiliated with, endorsed by or sponsored by LinkedIn Corporation or Microsoft. LinkedIn is a trademark of LinkedIn Corporation. You use the LinkedIn API through your own developer app and are responsible for following the [LinkedIn API Terms of Use](https://www.linkedin.com/legal/l/api-terms-of-use) and the [User Agreement](https://www.linkedin.com/legal/user-agreement), including when you use automatic posting.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 
 ## License
 

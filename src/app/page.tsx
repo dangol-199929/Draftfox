@@ -3,7 +3,7 @@ import { GenerateForm } from "@/components/generate-form";
 import { PageHeader } from "@/components/page-header";
 
 // The layout's title template only applies to nested routes, so the home page spells its title out.
-export const metadata: Metadata = { title: { absolute: "Generate · LinkedIn AI Engine" } };
+export const metadata: Metadata = { title: { absolute: "Generate · Draftfox" } };
 
 export default function GeneratePage() {
   return (

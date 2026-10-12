@@ -1,7 +1,7 @@
 {
-  "name": "linkedin-ai-engine",
+  "name": "draftfox",
   "version": "0.1.0",
-  "description": "Generate LinkedIn post drafts with a local LLM through Ollama",
+  "description": "Local AI for LinkedIn posts: drafts, designed images, scheduling. Free, private, open source.",
   "license": "MIT",
   "private": true,
   "type": "module",

@@ -21,8 +21,10 @@ export function SiteHeader() {
   return (
     <header className="border-b">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-        <Link href="/" className="font-semibold tracking-tight">
-          LinkedIn AI Engine
+        <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
+          {/* eslint-disable-next-line @next/next/no-img-element -- small static logo */}
+          <img src="/icon.svg" alt="" width={24} height={24} className="size-6" />
+          Draftfox
         </Link>
         <nav className="order-last flex w-full flex-wrap gap-1 sm:order-none sm:w-auto">
           {links.map((link) => (
