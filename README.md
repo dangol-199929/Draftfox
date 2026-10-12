@@ -8,6 +8,8 @@ Generate LinkedIn post drafts with a local, open-source LLM. A small web app tha
 
 You give it a topic and what really happened; it writes a draft you can edit and copy. **Nothing is posted to LinkedIn unless you click Post to LinkedIn and confirm.** The optional LinkedIn connection reads your name, email and photo, and can post only with your confirmation.
 
+**New here?** Read [what Draftfox is and why it exists](docs/ABOUT.md), then follow the [step-by-step setup guide for Mac and Windows](docs/SETUP.md) (with minimum requirements and fixes for common errors).
+
 ## Requirements
 
 - [Node.js](https://nodejs.org) 24 or newer
