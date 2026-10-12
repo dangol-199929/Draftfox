@@ -1,3 +1,4 @@
+import { logEvent } from "@/lib/db.ts";
 import { importExport, saveProfile } from "@/lib/profile.ts";
 
 export const runtime = "nodejs";
@@ -33,6 +34,7 @@ export async function POST(request: Request) {
       );
     }
     await saveProfile(profile);
+    logEvent("profile_imported", { files: summary.files.length, posts: summary.posts });
     return Response.json({ profile, summary });
   } catch (error) {
     console.error("Profile import failed:", (error as Error).message);

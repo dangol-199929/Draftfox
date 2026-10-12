@@ -1,3 +1,4 @@
+import { logEvent } from "@/lib/db.ts";
 import { EMPTY_PROFILE, deleteProfile, readProfile, saveProfile, validateProfile } from "@/lib/profile.ts";
 
 export const runtime = "nodejs";
@@ -19,6 +20,7 @@ export async function PUT(request: Request) {
 
   try {
     await saveProfile(profile);
+    logEvent("profile_saved");
   } catch (error) {
     console.error("Could not save the profile:", error);
     return Response.json({ error: `Could not save the profile: ${(error as Error).message}` }, { status: 500 });

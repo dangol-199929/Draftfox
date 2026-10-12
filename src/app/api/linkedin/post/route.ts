@@ -1,3 +1,4 @@
+import { logEvent } from "@/lib/db.ts";
 import { LinkedInError, MAX_POST_LENGTH, createPost, deletePost, type Visibility } from "@/lib/linkedin.ts";
 
 export const runtime = "nodejs";
@@ -21,8 +22,12 @@ export async function POST(request: Request) {
 
   try {
     const urn = await createPost({ text, visibility: visibility as Visibility });
-    return Response.json({ urn, url: `https://www.linkedin.com/feed/update/${urn}` });
+    const url = `https://www.linkedin.com/feed/update/${urn}`;
+    // The opening line is kept so the Reports page can tell posts apart; the full text stays out of the log.
+    logEvent("post_published", { urn, url, visibility, characters: text.length, preview: text.split("\n")[0].slice(0, 120) });
+    return Response.json({ urn, url });
   } catch (error) {
+    logEvent("post_failed", { status: error instanceof LinkedInError ? error.status : 502 });
     return failure(error);
   }
 }
@@ -34,6 +39,7 @@ export async function DELETE(request: Request) {
 
   try {
     await deletePost(urn);
+    logEvent("post_deleted", { urn });
     return Response.json({ deleted: true });
   } catch (error) {
     return failure(error);

@@ -208,6 +208,12 @@ export function GenerateForm() {
 
   async function copy() {
     await navigator.clipboard.writeText(post);
+    // For the Reports page; a failed log doesn't matter here.
+    fetch("/api/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "draft_copied", characters: post.length }),
+    }).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }

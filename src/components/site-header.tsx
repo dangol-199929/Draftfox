@@ -10,6 +10,7 @@ const links = [
   { href: "/profile", label: "Profile" },
   { href: "/prompt", label: "Prompt" },
   { href: "/linkedin", label: "LinkedIn" },
+  { href: "/reports", label: "Reports" },
 ];
 
 export function SiteHeader() {
@@ -21,7 +22,7 @@ export function SiteHeader() {
         <Link href="/" className="font-semibold tracking-tight">
           LinkedIn AI Engine
         </Link>
-        <nav className="order-last flex w-full gap-1 sm:order-none sm:w-auto">
+        <nav className="order-last flex w-full flex-wrap gap-1 sm:order-none sm:w-auto">
           {links.map((link) => (
             <Link
               key={link.href}

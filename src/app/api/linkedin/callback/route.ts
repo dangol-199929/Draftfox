@@ -1,3 +1,4 @@
+import { logEvent } from "@/lib/db.ts";
 import { NextResponse, type NextRequest } from "next/server";
 import { STATE_COOKIE, connect, getConfig, type LoginMode } from "@/lib/linkedin.ts";
 
@@ -39,6 +40,7 @@ export async function GET(request: NextRequest) {
 
   try {
     await connect(config, code, mode);
+    logEvent("linkedin_connected", { posting: mode === "posting" });
   } catch (error) {
     console.error("LinkedIn sign-in failed:", (error as Error).message);
     return back({ error: "token_exchange_failed" });

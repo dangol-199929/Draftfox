@@ -1,3 +1,4 @@
+import { logEvent } from "@/lib/db.ts";
 import { SYSTEM_PROMPT } from "@/lib/prompts.ts";
 import { getSystemPrompt, resetSystemPrompt, saveSystemPrompt } from "@/lib/settings.ts";
 
@@ -29,6 +30,7 @@ export async function PUT(request: Request) {
     // Saving the default text unchanged stores nothing, so the prompt stays "Default".
     if (prompt === SYSTEM_PROMPT) await resetSystemPrompt();
     else await saveSystemPrompt(prompt);
+    logEvent(prompt === SYSTEM_PROMPT ? "prompt_reset" : "prompt_saved");
   } catch (error) {
     return serverError(error);
   }
@@ -38,6 +40,7 @@ export async function PUT(request: Request) {
 export async function DELETE() {
   try {
     await resetSystemPrompt();
+    logEvent("prompt_reset");
   } catch (error) {
     return serverError(error);
   }

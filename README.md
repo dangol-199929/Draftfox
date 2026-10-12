@@ -27,6 +27,7 @@ Then open http://localhost:3000.
 - **Profile** (`/profile`): optional facts about you and examples of your past posts, so drafts sound like you. Fill it in by hand or import your LinkedIn data (see below).
 - **Prompt** (`/prompt`): edit the system prompt, the standing rules the model follows for every post. Save, discard changes, or reset to the built-in default.
 - **LinkedIn** (`/linkedin`): connect your LinkedIn account with Sign In with LinkedIn, and optionally enable posting. See below.
+- **Reports** (`/reports`): drafts generated, copied and posted over the last 7, 30 or 90 days or all time, with a chart, the lengths and tones you use, recent activity and links to the posts you published. See below.
 
 ## Profile and LinkedIn data import (optional)
 
@@ -59,6 +60,12 @@ Only needed for the LinkedIn page.
 Once connected and **Enable posting** is done, a **Post to LinkedIn** button appears under a finished post on the Generate page. It opens a preview of the exact text, a character count (LinkedIn allows 3,000), a choice of **Anyone** or **Connections only**, and a final confirmation. Nothing is posted until you click **Post** in that dialog.
 
 After posting you get a **View on LinkedIn** link and an **Undo** button that deletes the post from LinkedIn again.
+
+## Reports and LinkedIn analytics
+
+The Reports page is built from what the app records on your computer: each generation, plus an activity log in `data/app.db` (posts published or deleted, drafts copied, LinkedIn connected, profile and prompt changes). Only a post's first line is logged, never the full text. If you imported your LinkedIn data, it also shows how many posts you wrote per month.
+
+It can't show impressions, reactions, comments, followers or profile views. LinkedIn only offers those through its Member Post Analytics and Member Follower Statistics APIs (`r_member_postAnalytics`, `r_member_profileAnalytics`), which are part of the **Community Management API**. LinkedIn grants that by manual review to registered companies only (business email, legal name, address, website, privacy policy, and a verifying LinkedIn Page), on a new developer app with no other products. Sign In with LinkedIn and Share on LinkedIn don't include any analytics. Until then, see your numbers at [linkedin.com/analytics/creator/content](https://www.linkedin.com/analytics/creator/content/).
 
 ## Settings
 
