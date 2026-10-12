@@ -66,6 +66,8 @@ After posting you get a **View on LinkedIn** link and an **Undo** button that de
 
 **Images.** In the post editor, add your own PNG, JPG or GIF images (up to 20, 10 MB each), or generate one: write a prompt or click **Suggest from post**, pick Landscape, Square or Portrait, and generate. Images are made on your own computer with FLUX.2 Klein 4B (Apache 2.0), so they're free. Images are stored in `data/images`.
 
+**Designed cards** (the default in the editor) turn a post into an eye-catching image: a label, a short hook, up to four key points and a simple 2D cartoon, laid out on a grid in Portrait (1080×1350) or Square, in one of four color themes. **Write from post** fills in the text with the text model; edit anything, then **Make card**. The cartoon has no words in it: the text is drawn by the app (Poppins), so it's always crisp and spelled right, and editing the text redraws the card instantly with the same cartoon. Automatic posting can add a card to each post too. **Picture only** makes a plain image from your own prompt.
+
 The app picks an image engine by itself: **mflux** on Macs with Apple silicon, **ComfyUI** everywhere else. Set `IMAGE_ENGINE` to choose (`mflux`, `comfyui` or `ollama`).
 
 *Mac (mflux).* In a terminal:

@@ -133,3 +133,35 @@ export async function* streamText(
     }
   }
 }
+
+// Asks for a reply that matches a JSON schema (Ollama's structured outputs) and returns it parsed.
+export async function generateJson<T>(prompt: string, system: string, schema: object): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: prompt },
+        ],
+        format: schema,
+        stream: false,
+        think: false,
+        options: OPTIONS,
+      }),
+    });
+  } catch {
+    throw new Error(`Could not reach Ollama at ${OLLAMA_URL}. Is it running? Open the Ollama app or run: ollama serve`);
+  }
+  if (response.status === 404) throw new Error(`Model "${OLLAMA_MODEL}" is not downloaded. Run: ollama pull ${OLLAMA_MODEL}`);
+  if (!response.ok) throw new Error(`Ollama returned ${response.status}: ${await response.text()}`);
+  const data = (await response.json()) as ChatResponse;
+  try {
+    return JSON.parse(data.message.content) as T;
+  } catch {
+    throw new Error("The model's reply wasn't valid JSON. Try again.");
+  }
+}

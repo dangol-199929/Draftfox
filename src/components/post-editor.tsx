@@ -17,6 +17,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { CardMaker } from "@/components/card-maker";
 import { ImageGenerator } from "@/components/image-generator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -69,6 +70,7 @@ export function PostEditor({ id }: { id: string }) {
   const [busy, setBusy] = useState<"" | "publishing" | "scheduling" | "deleting" | "unpublishing">("");
   const [actionError, setActionError] = useState("");
   const [when, setWhen] = useState(defaultScheduleTime);
+  const [maker, setMaker] = useState<"card" | "picture">("card");
   const lastSaved = useRef<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -124,6 +126,10 @@ export function PostEditor({ id }: { id: string }) {
 
   function setImages(update: (images: PostImage[]) => PostImage[]) {
     setDraft((current) => ({ ...current, images: update(current.images) }));
+  }
+
+  function addImage(id: string, alt: string) {
+    setImages((current) => [...current, { id, alt }]);
   }
 
   async function upload(files: FileList | null) {
@@ -361,10 +367,25 @@ export function PostEditor({ id }: { id: string }) {
                   {uploadError && <p className="text-sm text-destructive">{uploadError}</p>}
                 </div>
                 {draft.images.length < MAX_IMAGES && (
-                  <ImageGenerator
-                    postText={draft.text}
-                    onImage={(imageId) => setImages((current) => [...current, { id: imageId, alt: "" }])}
-                  />
+                  <div className="grid gap-3">
+                    <ToggleGroup
+                      type="single"
+                      variant="outline"
+                      size="sm"
+                      aria-label="Kind of image to make"
+                      className="justify-self-start"
+                      value={maker}
+                      onValueChange={(value) => value && setMaker(value as typeof maker)}
+                    >
+                      <ToggleGroupItem value="card">Designed card</ToggleGroupItem>
+                      <ToggleGroupItem value="picture">Picture only</ToggleGroupItem>
+                    </ToggleGroup>
+                    {maker === "card" ? (
+                      <CardMaker postText={draft.text} onImage={addImage} />
+                    ) : (
+                      <ImageGenerator postText={draft.text} onImage={(imageId) => addImage(imageId, "")} />
+                    )}
+                  </div>
                 )}
               </>
             )}

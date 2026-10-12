@@ -2,7 +2,8 @@
 // topic in your list, optionally with an image, and either saves it as a draft for you to review or posts it.
 import { randomUUID } from "node:crypto";
 import { insertPost, logEvent, readSetting, writeSetting, type PostRecord } from "./db.ts";
-import { IMAGE_SIZES, generateImage, suggestImagePrompt, type ImageSize } from "./images.ts";
+import { CARTOON_SIZE, PALETTES, cartoonPrompt, renderCard, writeCardContent, type Palette } from "./card.tsx";
+import { generateImage, readImage, saveImage } from "./images.ts";
 import { generateLinkedInPost } from "./post.ts";
 import type { PostInput } from "./prompts.ts";
 import { publishPost } from "./publish.ts";
@@ -19,8 +20,9 @@ export type AutopilotSettings = {
   audience: string;
   tone: string;
   length: NonNullable<PostInput["length"]>;
+  // Adds a designed card (hook, key points and a cartoon) to each post.
   withImage: boolean;
-  imageSize: ImageSize;
+  cardPalette: Palette;
   // "review": save a draft for you to approve. "auto": post it right away.
   mode: "review" | "auto";
   visibility: "PUBLIC" | "CONNECTIONS";
@@ -43,7 +45,7 @@ export const DEFAULT_SETTINGS: AutopilotSettings = {
   tone: "",
   length: "medium",
   withImage: false,
-  imageSize: "landscape",
+  cardPalette: "cream",
   mode: "review",
   visibility: "PUBLIC",
 };
@@ -82,7 +84,7 @@ export function validateSettings(body: unknown): AutopilotSettings | string {
   }
   if (!["short", "medium", "long"].includes(data.length)) return `"length" must be short, medium or long.`;
   if (typeof data.withImage !== "boolean") return `"withImage" must be true or false.`;
-  if (!(data.imageSize in IMAGE_SIZES)) return `"imageSize" must be one of: ${Object.keys(IMAGE_SIZES).join(", ")}.`;
+  if (!(data.cardPalette in PALETTES)) return `"cardPalette" must be one of: ${Object.keys(PALETTES).join(", ")}.`;
   if (!["review", "auto"].includes(data.mode)) return `"mode" must be review or auto.`;
   if (!["PUBLIC", "CONNECTIONS"].includes(data.visibility)) return `"visibility" must be PUBLIC or CONNECTIONS.`;
   return {
@@ -94,7 +96,7 @@ export function validateSettings(body: unknown): AutopilotSettings | string {
     tone: data.tone.trim(),
     length: data.length,
     withImage: data.withImage,
-    imageSize: data.imageSize,
+    cardPalette: data.cardPalette,
     mode: data.mode,
     visibility: data.visibility,
   };
@@ -191,8 +193,7 @@ export async function runAutopilot(
     const images: PostRecord["images"] = [];
     if (settings.withImage && !needsContext) {
       try {
-        const image = await generateImage(await suggestImagePrompt(text), settings.imageSize);
-        images.push({ id: image.id, alt: "" });
+        images.push(await makeCard(text, settings.cardPalette));
       } catch (error) {
         notes.push(`no image (${(error as Error).message})`);
       }
@@ -233,4 +234,23 @@ export async function runAutopilot(
   } finally {
     flags.autopilotRunning = false;
   }
+}
+
+// Writes the card text from the post, draws the cartoon, lays out the card and saves it. Without a cartoon
+// (the image engine isn't set up), the card is still made with text only.
+async function makeCard(text: string, palette: Palette): Promise<PostRecord["images"][number]> {
+  const content = await writeCardContent(text);
+  let illustration: { data: Buffer; mime: string } | null = null;
+  if (content.illustration) {
+    try {
+      const cartoon = await generateImage(cartoonPrompt(content.illustration), CARTOON_SIZE.portrait);
+      const file = await readImage(cartoon.id);
+      if (file) illustration = { data: file.data, mime: file.record.mime };
+    } catch (error) {
+      console.error("Automatic posting: no cartoon for the card:", (error as Error).message);
+    }
+  }
+  const png = await renderCard({ content, palette, layout: "portrait", illustration });
+  const card = await saveImage(png, "image/png", "generated", content.hook);
+  return { id: card.id, alt: [content.hook.replace(/\*/g, ""), ...content.points].join(". ").slice(0, 1000) };
 }

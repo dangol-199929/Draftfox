@@ -14,8 +14,16 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { AutopilotSettings, AutopilotState } from "@/lib/autopilot.ts";
+import { PALETTES, type Palette } from "@/lib/card-styles.ts";
 
 type Form = Omit<AutopilotSettings, "topics"> & { topics: string };
+
+const CARD_PALETTES = Object.entries(PALETTES).map(([value, colors]) => ({
+  value: value as Palette,
+  label: colors.label,
+  bg: colors.bg,
+  accent: colors.accent,
+}));
 
 const FREQUENCY_LABELS: Record<AutopilotSettings["frequency"], string> = {
   daily: "Every day",
@@ -211,12 +219,38 @@ export function AutopilotPanel() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-4">
-          <Label htmlFor="autopilot-image" className="grid gap-0.5">
-            Add a generated image
-            <span className="text-xs font-normal text-muted-foreground">Uses the local image model; adds a minute or two per post.</span>
-          </Label>
-          <Switch id="autopilot-image" checked={form.withImage} onCheckedChange={(value) => set("withImage", value)} />
+        <div className="grid gap-3">
+          <div className="flex items-center justify-between gap-4">
+            <Label htmlFor="autopilot-image" className="grid gap-0.5">
+              Add a designed card
+              <span className="text-xs font-normal text-muted-foreground">
+                A hook, key points and a cartoon from the post. Adds a minute or two per post.
+              </span>
+            </Label>
+            <Switch id="autopilot-image" checked={form.withImage} onCheckedChange={(value) => set("withImage", value)} />
+          </div>
+          {form.withImage && (
+            <div className="flex items-center gap-2" role="radiogroup" aria-label="Card colors">
+              <span className="text-sm">Colors</span>
+              {CARD_PALETTES.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={form.cardPalette === option.value}
+                  aria-label={option.label}
+                  title={option.label}
+                  onClick={() => set("cardPalette", option.value)}
+                  className={`flex size-7 items-center justify-center rounded-full border ${
+                    form.cardPalette === option.value ? "ring-2 ring-foreground ring-offset-2 ring-offset-background" : ""
+                  }`}
+                  style={{ background: option.bg }}
+                >
+                  <span className="size-3 rounded-full" style={{ background: option.accent }} />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="grid gap-2">
