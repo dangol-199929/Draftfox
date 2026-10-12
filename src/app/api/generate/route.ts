@@ -1,5 +1,11 @@
-import { OLLAMA_MODEL, OllamaError } from "@/lib/ollama.ts";
-import { streamLinkedInPost } from "@/lib/post.ts";
+import {
+  currentGeneration,
+  findGeneration,
+  followGeneration,
+  snapshot,
+  startGeneration,
+  stopGeneration,
+} from "@/lib/generation.ts";
 import type { PostInput } from "@/lib/prompts.ts";
 
 export const runtime = "nodejs";
@@ -7,6 +13,10 @@ export const runtime = "nodejs";
 const FIELDS = ["topic", "experience", "audience", "tone", "length"];
 const LENGTHS = ["short", "medium", "long"];
 
+const STREAM_HEADERS = { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-cache" };
+
+// Starts a generation on the server and streams its text. The generation keeps going if the page goes away;
+// its id is in the X-Generation-Id header so the page can reconnect with GET ?follow=<id>.
 export async function POST(request: Request) {
   let body: unknown;
   try {
@@ -19,44 +29,31 @@ export async function POST(request: Request) {
   if (typeof result === "string") return badRequest(result);
 
   // Wait for the first chunk so Ollama errors still come back as JSON with a 503.
-  const chunks = streamLinkedInPost(result, request.signal);
-  let next: IteratorResult<string> | null;
-  try {
-    next = await chunks.next();
-  } catch (error) {
-    const code = error instanceof OllamaError ? error.code : "generation_failed";
-    return Response.json(
-      { error: (error as Error).message, code, ...(code === "model_missing" && { model: OLLAMA_MODEL }) },
-      { status: 503 },
-    );
+  const job = startGeneration(result);
+  await job.started;
+  const state = snapshot(job);
+  if (state.status === "failed" && !state.text) {
+    return Response.json({ error: state.error, code: state.code, model: state.model }, { status: 503 });
   }
 
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        next ??= await chunks.next();
-      } catch (error) {
-        // Headers are already sent, so break the stream; the client keeps the partial post and shows an alert.
-        if (!request.signal.aborted) console.error("Post generation failed mid-stream:", error);
-        controller.error(error);
-        return;
-      }
-      if (next.done) {
-        controller.close();
-      } else {
-        controller.enqueue(encoder.encode(next.value));
-      }
-      next = null;
-    },
-    async cancel() {
-      await chunks.return(undefined);
-    },
-  });
+  return new Response(followGeneration(job), { headers: { ...STREAM_HEADERS, "X-Generation-Id": job.id } });
+}
 
-  return new Response(stream, {
-    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-cache" },
-  });
+// Without parameters: the latest generation as JSON ({ generation: null } if none yet).
+// With ?follow=<id>: that generation's text so far and then live, if it's still the current one.
+export async function GET(request: Request) {
+  const id = new URL(request.url).searchParams.get("follow");
+  if (id === null) return Response.json({ generation: currentGeneration() });
+
+  const job = findGeneration(id);
+  if (!job) return Response.json({ error: "That generation is no longer available." }, { status: 404 });
+  return new Response(followGeneration(job), { headers: STREAM_HEADERS });
+}
+
+// Stops the running generation, keeping what it wrote so far.
+export async function DELETE() {
+  stopGeneration();
+  return Response.json({ generation: currentGeneration() });
 }
 
 // Returns the cleaned input, or an error message naming the bad field.

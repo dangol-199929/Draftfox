@@ -1,5 +1,6 @@
 // Server-only: the local SQLite database in data/app.db, through Node's built-in node:sqlite (no native build step).
-// Holds what you're working on (form contents and unsaved edits) so it survives page switches and reloads.
+// Holds what you're working on (form contents and unsaved edits) so it survives page switches and reloads,
+// and every generated post, so a post finished while you were on another page isn't lost.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -29,6 +30,16 @@ function db(): DatabaseSync {
         value TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS generations (
+        id TEXT PRIMARY KEY,
+        input TEXT NOT NULL,
+        text TEXT NOT NULL,
+        status TEXT NOT NULL,
+        error TEXT,
+        code TEXT,
+        started_at TEXT NOT NULL,
+        seconds REAL
+      );
     `);
     globalForDb.appDb = database;
   }
@@ -56,4 +67,32 @@ export function writeState(key: StateKey, value: unknown): void {
 
 export function deleteState(key: StateKey): void {
   db().prepare("DELETE FROM page_state WHERE key = ?").run(key);
+}
+
+// --- Generations ---
+
+export type GenerationRow = {
+  id: string;
+  input: string;
+  text: string;
+  status: string;
+  error: string | null;
+  code: string | null;
+  started_at: string;
+  seconds: number | null;
+};
+
+export function saveGeneration(row: GenerationRow): void {
+  db()
+    .prepare(
+      `INSERT INTO generations (id, input, text, status, error, code, started_at, seconds)
+       VALUES (:id, :input, :text, :status, :error, :code, :started_at, :seconds)
+       ON CONFLICT (id) DO UPDATE SET text = excluded.text, status = excluded.status, error = excluded.error,
+         code = excluded.code, seconds = excluded.seconds`,
+    )
+    .run(row);
+}
+
+export function latestGeneration(): GenerationRow | null {
+  return (db().prepare("SELECT * FROM generations ORDER BY started_at DESC LIMIT 1").get() as GenerationRow) ?? null;
 }

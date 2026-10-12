@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { Profile } from "@/lib/profile.ts";
+import type { GenerationSnapshot } from "@/lib/generation.ts";
 import type { PostInput } from "@/lib/prompts.ts";
 import { useSavedState } from "@/lib/use-saved-state.ts";
 
@@ -29,6 +30,8 @@ type SavedGenerate = {
   post: string;
   seconds: number | null;
   lastInput: PostInput | null;
+  // Set while a generation runs on the server, so the page can reconnect to it after a page switch or reload.
+  generationId: string | null;
 };
 
 const NEED_MORE_CONTEXT = "NEED MORE CONTEXT:";
@@ -52,13 +55,14 @@ export function GenerateForm() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [lastInput, setLastInput] = useState<PostInput | null>(null);
+  const [generationId, setGenerationId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const experienceRef = useRef<HTMLTextAreaElement>(null);
   const [profileNote, setProfileNote] = useState<string | null>(null);
 
   const restored = useSavedState<SavedGenerate>(
     "generate",
-    { topic, experience, audience, tone, length, post, seconds, lastInput },
+    { topic, experience, audience, tone, length, post, seconds, lastInput, generationId },
     (saved) => {
       setTopic(saved.topic ?? "");
       setExperience(saved.experience ?? "");
@@ -68,8 +72,15 @@ export function GenerateForm() {
       setPost(saved.post ?? "");
       setSeconds(saved.seconds ?? null);
       setLastInput(saved.lastInput ?? null);
+      if (saved.generationId) {
+        setGenerationId(saved.generationId);
+        track((controller) => watch(saved.generationId!, null, controller));
+      }
     },
   );
+
+  // Leaving the page only stops listening; the generation itself keeps running on the server.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   useEffect(() => {
     fetch("/api/profile")
@@ -82,22 +93,39 @@ export function GenerateForm() {
   const words = post.split(/\s+/).filter(Boolean).length;
   const questions = !loading && post.startsWith(NEED_MORE_CONTEXT) ? parseQuestions(post) : null;
 
-  async function generate(input: PostInput) {
+  // Runs `work` with the loading state on, and a controller that's aborted if the page goes away.
+  async function track(work: (controller: AbortController) => Promise<void>) {
     const controller = new AbortController();
     abortRef.current = controller;
     setLoading(true);
+    try {
+      await work(controller);
+    } finally {
+      if (abortRef.current === controller) {
+        setLoading(false);
+        abortRef.current = null;
+      }
+    }
+  }
+
+  function generate(input: PostInput) {
     setError(null);
     setLastInput(input);
-    const start = Date.now();
-    let streamed = false;
-    try {
-      const response = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-        signal: controller.signal,
-      });
-      if (!response.ok || !response.body) {
+    return track(async (controller) => {
+      let response: Response;
+      try {
+        response = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+          signal: controller.signal,
+        });
+      } catch (err) {
+        if (!controller.signal.aborted) setError({ message: (err as Error).message });
+        return;
+      }
+      const id = response.headers.get("X-Generation-Id");
+      if (!response.ok || !response.body || !id) {
         const data = (await response.json().catch(() => ({}))) as Partial<GenerateError> & { error?: string };
         setError({
           message: data.error ?? `Request failed with status ${response.status}.`,
@@ -106,39 +134,57 @@ export function GenerateForm() {
         });
         return;
       }
-
-      streamed = true;
-      setPost("");
-      setSeconds(null);
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const text = decoder.decode(value, { stream: true });
-        setPost((current) => current + text);
-      }
-    } catch (err) {
-      // Stopping on purpose keeps the partial post without an error.
-      if (!controller.signal.aborted) {
-        setError({
-          message: streamed
-            ? "The connection dropped before the post was finished. The partial post is kept."
-            : (err as Error).message,
-        });
-      }
-    } finally {
-      if (streamed) {
-        setPost((current) => current.trim());
-        setSeconds((Date.now() - start) / 1000);
-      }
-      setLoading(false);
-      abortRef.current = null;
-    }
+      setGenerationId(id);
+      await watch(id, response, controller);
+    });
   }
 
+  // Streams a server-side generation into the post (from its start), then applies how it ended.
+  // `response` is the POST that started it; without one, this reconnects to it.
+  async function watch(id: string, response: Response | null, controller: AbortController) {
+    try {
+      const stream = response ?? (await fetch(`/api/generate?follow=${id}`, { signal: controller.signal }));
+      if (stream.ok && stream.body) {
+        setPost("");
+        setSeconds(null);
+        const reader = stream.body.getReader();
+        const decoder = new TextDecoder();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const text = decoder.decode(value, { stream: true });
+          setPost((current) => current + text);
+        }
+      }
+    } catch {
+      // The final state below says what happened; an abort means the page went away.
+    }
+    if (controller.signal.aborted) return;
+
+    const generation = await fetch("/api/generate")
+      .then((res) => res.json() as Promise<{ generation: GenerationSnapshot | null }>)
+      .then((data) => data.generation)
+      .catch(() => null);
+    if (generation?.id === id) {
+      setPost(generation.text);
+      setSeconds(generation.seconds);
+      if (generation.status === "failed") {
+        setError({
+          message: generation.error ?? "The post couldn't be finished. The partial post is kept.",
+          code: generation.code,
+          model: generation.model,
+        });
+      }
+    } else {
+      setPost((current) => current.trim());
+      if (!generation) setError({ message: "Lost touch with the app's server. The partial post is kept." });
+    }
+    setGenerationId(null);
+  }
+
+  // Stops the generation on the server; the stream then ends and the partial post is kept.
   function stop() {
-    abortRef.current?.abort();
+    fetch("/api/generate", { method: "DELETE" }).catch(() => {});
   }
 
   function submit() {
@@ -156,6 +202,7 @@ export function GenerateForm() {
     setPost("");
     setSeconds(null);
     setLastInput(null);
+    setGenerationId(null);
     setError(null);
   }
 
