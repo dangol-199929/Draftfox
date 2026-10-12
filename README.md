@@ -64,7 +64,30 @@ After posting you get a **View on LinkedIn** link and an **Undo** button that de
 
 ## Images, scheduling and automatic posting
 
-**Images.** In the post editor, add your own PNG, JPG or GIF images (up to 20, 10 MB each), or generate one with a local image model through Ollama: write a prompt or click **Suggest from post**, pick Landscape, Square or Portrait, and generate. It takes a minute or two on an M-series Mac. Download the model once with `ollama pull x/flux2-klein` (FLUX.2 Klein 4B, about 5.7 GB, Apache 2.0). Ollama's image generation is experimental and works on macOS only for now. Images are stored in `data/images`.
+**Images.** In the post editor, add your own PNG, JPG or GIF images (up to 20, 10 MB each), or generate one: write a prompt or click **Suggest from post**, pick Landscape, Square or Portrait, and generate. Images are made on your own computer with FLUX.2 Klein 4B (Apache 2.0), so they're free. Images are stored in `data/images`.
+
+The app picks an image engine by itself: **mflux** on Macs with Apple silicon, **ComfyUI** everywhere else. Set `IMAGE_ENGINE` to choose (`mflux`, `comfyui` or `ollama`).
+
+*Mac (mflux).* In a terminal:
+
+```bash
+brew install uv
+uv tool install --upgrade mflux
+uv tool update-shell   # then open a new terminal
+mflux-generate-flux2 --model flux2-klein-4b --prompt "a coffee cup on a desk" --steps 4 -q 8 --width 512 --height 512 --output ~/Desktop/test.png
+```
+
+The last command makes a test image and downloads the model the first time (about 15 GB). Works on 16 GB Macs; before each image the app unloads the text model from Ollama to free memory.
+
+*Windows or Linux (ComfyUI).* Needs an NVIDIA graphics card with about 8 GB or more.
+
+1. Install the ComfyUI desktop app from [comfy.org](https://www.comfy.org/download) and open it.
+2. In ComfyUI, open **Templates**, load **Flux.2 Klein 4B Text to Image**, and let it download the model files (`flux-2-klein-4b.safetensors`, `qwen_3_4b.safetensors`, `flux2-vae.safetensors`). Run it once to check it works.
+3. Keep ComfyUI open while you use the app. The desktop app listens on `http://127.0.0.1:8000`; if yours runs elsewhere (the portable version uses 8188, or another PC on your network), set `COMFYUI_URL`.
+
+To use your own ComfyUI workflow instead of the built-in one, export it with **Export (API)**, write `{{prompt}}`, `{{width}}`, `{{height}}` and `{{seed}}` where those go, and set `COMFYUI_WORKFLOW` to the file.
+
+*Ollama.* Ollama had experimental image generation on macOS but turned it off after version 0.32.5. If it returns, set `IMAGE_ENGINE=ollama` and `ollama pull x/flux2-klein`.
 
 **Post later.** Pick a date and time and click **Schedule**. The app checks every 30 seconds and posts it when it's due. This only works while the app is running (`pnpm dev` or `pnpm start`) on a computer that's awake. If it was off at that time, the post goes out when you start the app again, up to 12 hours late; after that it's marked as missed so you can post or reschedule it.
 
@@ -84,7 +107,13 @@ Copy `.env.example` to `.env` and fill in what you need. Everything is optional.
 | --- | --- | --- |
 | `OLLAMA_URL` | `http://localhost:11434` | Where Ollama is running |
 | `OLLAMA_MODEL` | `gemma4:12b` | Which model writes the posts (download it first with `ollama pull <model>`) |
-| `OLLAMA_IMAGE_MODEL` | `x/flux2-klein` | Which model makes images (macOS only for now; download it first with `ollama pull x/flux2-klein`, about 5.7 GB) |
+| `IMAGE_ENGINE` | `mflux` on Apple silicon Macs, otherwise `comfyui` | What makes images: `mflux`, `comfyui` or `ollama` |
+| `MFLUX_MODEL` | `flux2-klein-4b` | mflux model (`flux2-klein-9b` is better but needs more memory) |
+| `MFLUX_QUANTIZE` | `8` | mflux quantization (`4` uses less memory) |
+| `MFLUX_COMMAND` | `mflux-generate-flux2` | Path to the mflux command, if it isn't found |
+| `COMFYUI_URL` | `http://127.0.0.1:8000` | Where ComfyUI runs |
+| `COMFYUI_WORKFLOW` | none | Your own ComfyUI workflow (API format) with `{{prompt}}`, `{{width}}`, `{{height}}`, `{{seed}}` |
+| `OLLAMA_IMAGE_MODEL` | `x/flux2-klein` | Image model when `IMAGE_ENGINE=ollama` |
 | `LINKEDIN_CLIENT_ID` | none | Client ID of your LinkedIn app |
 | `LINKEDIN_CLIENT_SECRET` | none | Primary Client Secret of your LinkedIn app. Keep it secret. |
 | `LINKEDIN_REDIRECT_URI` | `http://localhost:3000/api/linkedin/callback` | Must match the redirect URL in your LinkedIn app |

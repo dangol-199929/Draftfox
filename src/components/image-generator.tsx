@@ -17,7 +17,9 @@ const SIZES: { value: Size; label: string }[] = [
   { value: "portrait", label: "Portrait" },
 ];
 
-type GenerateError = { message: string; code?: string; model?: string };
+type GenerateError = { message: string; code?: string; command?: string };
+
+type EngineStatus = { id: string; label: string; ready: boolean; message?: string; command?: string };
 
 // Makes an image with the local image model, from a prompt you write or one suggested from the post.
 export function ImageGenerator({ postText, onImage }: { postText: string; onImage: (id: string) => void }) {
@@ -25,11 +27,21 @@ export function ImageGenerator({ postText, onImage }: { postText: string; onImag
   const [size, setSize] = useState<Size>("landscape");
   const [suggesting, setSuggesting] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [progress, setProgress] = useState<{ completed: number; total: number } | null>(null);
+  const [progress, setProgress] = useState<{ completed: number; total: number; label?: string } | null>(null);
   const [error, setError] = useState<GenerateError | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  const [engine, setEngine] = useState<EngineStatus | null>(null);
+
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  // Recheck whenever an error clears or appears, so installing the engine shows up without a reload.
+  useEffect(() => {
+    fetch("/api/images/engine")
+      .then((response) => response.json() as Promise<EngineStatus>)
+      .then(setEngine)
+      .catch(() => setEngine(null));
+  }, [error]);
 
   async function suggest() {
     setSuggesting(true);
@@ -79,14 +91,14 @@ export function ImageGenerator({ postText, onImage }: { postText: string; onImag
         for (const line of lines) {
           if (!line.trim()) continue;
           const message = JSON.parse(line) as {
-            progress?: { completed: number; total: number };
+            progress?: { completed: number; total: number; label?: string };
             image?: { id: string };
             error?: string;
             code?: string;
-            model?: string;
+            command?: string;
           };
           if (message.progress) setProgress(message.progress);
-          if (message.error) setError({ message: message.error, code: message.code, model: message.model });
+          if (message.error) setError({ message: message.error, code: message.code, command: message.command });
           if (message.image) onImage(message.image.id);
         }
       }
@@ -160,9 +172,25 @@ export function ImageGenerator({ postText, onImage }: { postText: string; onImag
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            {percent === null ? "Loading the image model…" : `Making the image… ${percent}%`} This can take a minute or two.
+            {percent === null
+              ? "Loading the image model…"
+              : `${progress?.label ?? "Making the image"}… ${percent}%`}{" "}
+            {progress?.label ? "" : "This can take a minute or two."}
           </p>
         </div>
+      )}
+      {engine && !error && (
+        engine.ready ? (
+          <p className="text-xs text-muted-foreground">Images are made on this computer with {engine.label}.</p>
+        ) : (
+          <Alert>
+            <AlertTitle>Set up image generation</AlertTitle>
+            <AlertDescription>
+              <p>{engine.message}</p>
+              {engine.command && <CommandLine command={engine.command} />}
+            </AlertDescription>
+          </Alert>
+        )
       )}
       {error && <ImageError error={error} />}
     </div>
@@ -170,32 +198,13 @@ export function ImageGenerator({ postText, onImage }: { postText: string; onImag
 }
 
 function ImageError({ error }: { error: GenerateError }) {
-  if (error.code === "model_missing" && error.model) {
-    return (
-      <Alert variant="destructive">
-        <AlertTitle>The image model isn&apos;t downloaded</AlertTitle>
-        <AlertDescription>
-          <p>Download it in a terminal (a few GB, so it takes a while), then try again:</p>
-          <CommandLine command={`ollama pull ${error.model}`} />
-        </AlertDescription>
-      </Alert>
-    );
-  }
-  if (error.code === "ollama_unreachable") {
-    return (
-      <Alert variant="destructive">
-        <AlertTitle>Ollama isn&apos;t running</AlertTitle>
-        <AlertDescription>
-          <p>Open the Ollama app, or start it in a terminal, then try again:</p>
-          <CommandLine command="ollama serve" />
-        </AlertDescription>
-      </Alert>
-    );
-  }
   return (
     <Alert variant="destructive">
       <AlertTitle>Couldn&apos;t make the image</AlertTitle>
-      <AlertDescription>{error.message}</AlertDescription>
+      <AlertDescription>
+        <p>{error.message}</p>
+        {error.command && <CommandLine command={error.command} />}
+      </AlertDescription>
     </Alert>
   );
 }

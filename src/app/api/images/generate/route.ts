@@ -1,11 +1,11 @@
 import { badRequest, readJsonObject } from "@/lib/api.ts";
-import { IMAGE_MODEL, IMAGE_SIZES, generateImage, type ImageSize } from "@/lib/images.ts";
-import { OllamaError } from "@/lib/ollama.ts";
+import { ImageEngineError } from "@/lib/image-engines/index.ts";
+import { IMAGE_SIZES, generateImage, type ImageSize } from "@/lib/images.ts";
 
 export const runtime = "nodejs";
 
 // Body: { prompt, size }. Streams NDJSON: {"progress": {completed, total}} lines while the image is made,
-// then {"image": {id}} or {"error", "code"}. Leaving the page stops the generation.
+// then {"image": {id}} or {"error", "code", "command"?}. Leaving the page stops the generation.
 export async function POST(request: Request) {
   const body = await readJsonObject(request);
   const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
@@ -32,8 +32,8 @@ export async function POST(request: Request) {
           console.error("Image generation failed:", (error as Error).message);
           send({
             error: (error as Error).message,
-            code: error instanceof OllamaError ? error.code : "generation_failed",
-            model: IMAGE_MODEL,
+            code: error instanceof ImageEngineError ? error.code : "generation_failed",
+            ...(error instanceof ImageEngineError && error.command && { command: error.command }),
           });
         }
       } finally {

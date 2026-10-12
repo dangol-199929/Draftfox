@@ -1,15 +1,13 @@
-// Server-only: post images, uploaded or made by a local image model through Ollama.
+// Server-only: post images, uploaded or made by a local image model (mflux, ComfyUI or Ollama).
 // Files are kept in data/images on this machine; the database only stores their names.
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { deleteImageRecord, getImage, imageInUse, insertImage, logEvent, type ImageRecord } from "./db.ts";
-import { OLLAMA_URL, OllamaError, generateText } from "./ollama.ts";
+import { ImageEngineError, imageEngine, type ImageProgress } from "./image-engines/index.ts";
+import { generateText } from "./ollama.ts";
 
 const IMAGE_DIR = join(process.cwd(), "data", "images");
-
-// FLUX.2 Klein 4B: about 5.7 GB, fits a 16 GB Mac and may be used commercially (Apache 2.0).
-export const IMAGE_MODEL = process.env.OLLAMA_IMAGE_MODEL ?? "x/flux2-klein";
 
 // LinkedIn takes JPG, PNG and GIF. 10 MB is plenty for a post image and keeps uploads quick.
 export const IMAGE_TYPES: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif" };
@@ -74,90 +72,27 @@ export function sniffImageType(data: Uint8Array): string | null {
   return null;
 }
 
-export type ImageProgress = { completed: number; total: number };
+// One image at a time: image models need most of the computer's memory or graphics card.
+const imageLock = globalThis as typeof globalThis & { imageBusy?: boolean };
 
-type ImageChunk = {
-  image?: string;
-  images?: string[];
-  completed?: number;
-  total?: number;
-  done?: boolean;
-  error?: string;
-};
-
-// Makes one image with the local image model. Ollama's image generation is experimental and macOS-only for now.
-// Calls onProgress with the diffusion steps done so far, when Ollama reports them.
+// Makes one image with the configured engine (mflux, ComfyUI or Ollama; see image-engines) and saves it.
 export async function generateImage(
   prompt: string,
   size: ImageSize,
   onProgress?: (progress: ImageProgress) => void,
   signal?: AbortSignal,
 ): Promise<ImageRecord> {
-  const { width, height } = IMAGE_SIZES[size];
-  let response: Response;
+  if (imageLock.imageBusy) throw new ImageEngineError("busy", "Another image is being made. Wait for it to finish.");
+  imageLock.imageBusy = true;
   try {
-    response = await fetch(`${OLLAMA_URL}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: IMAGE_MODEL, prompt, width, height, stream: true }),
-      signal,
-    });
-  } catch (error) {
-    if (signal?.aborted) throw error;
-    throw new OllamaError(
-      "ollama_unreachable",
-      `Could not reach Ollama at ${OLLAMA_URL}. Is it running? Open the Ollama app or run: ollama serve`,
-    );
+    const { width, height } = IMAGE_SIZES[size];
+    const data = await imageEngine().generate({ prompt, width, height, onProgress, signal });
+    const mime = sniffImageType(data);
+    if (!mime) throw new ImageEngineError("generation_failed", "The image engine returned something that isn't an image.");
+    return await saveImage(data, mime, "generated", prompt);
+  } finally {
+    imageLock.imageBusy = false;
   }
-  if (response.status === 404) {
-    throw new OllamaError(
-      "model_missing",
-      `The image model "${IMAGE_MODEL}" is not downloaded. Run: ollama pull ${IMAGE_MODEL}`,
-    );
-  }
-  if (!response.ok || !response.body) {
-    const detail = await response.text();
-    throw new OllamaError("generation_failed", imageErrorMessage(response.status, detail));
-  }
-
-  // NDJSON: progress lines, then one with the image as base64 PNG.
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let image: string | undefined;
-  const handle = (line: string) => {
-    if (!line.trim()) return;
-    const chunk = JSON.parse(line) as ImageChunk;
-    if (chunk.error) throw new OllamaError("generation_failed", imageErrorMessage(500, chunk.error));
-    if (typeof chunk.completed === "number" && typeof chunk.total === "number" && chunk.total > 0) {
-      onProgress?.({ completed: chunk.completed, total: chunk.total });
-    }
-    image = chunk.image ?? chunk.images?.[0] ?? image;
-  };
-  for await (const bytes of response.body) {
-    buffer += decoder.decode(bytes, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    lines.forEach(handle);
-  }
-  handle(buffer);
-
-  if (!image) throw new OllamaError("generation_failed", "The image model finished without returning an image.");
-  const data = Buffer.from(image.replace(/^data:image\/\w+;base64,/, ""), "base64");
-  const mime = sniffImageType(data) ?? "image/png";
-  return saveImage(data, mime, "generated", prompt);
-}
-
-function imageErrorMessage(status: number, detail: string): string {
-  if (/image generation models are not currently supported/i.test(detail)) {
-    return "This version of Ollama can't make images: Ollama turned image generation off after version 0.32.5 and plans to bring it back later. Post text still works as before.";
-  }
-  if (/does not support (generate|image)|not an image|unsupported/i.test(detail)) {
-    return `"${IMAGE_MODEL}" can't make images. Set OLLAMA_IMAGE_MODEL to an image model, such as x/flux2-klein.`;
-  }
-  if (/memory|out of memory|insufficient/i.test(detail)) {
-    return "Not enough memory to make the image. Close other apps (or stop a running post generation) and try again.";
-  }
-  return `Ollama returned ${status}: ${detail.slice(0, 300)}`;
 }
 
 const IMAGE_PROMPT_SYSTEM = `You write prompts for an image generator. Given a LinkedIn post, describe one image to go with it.
