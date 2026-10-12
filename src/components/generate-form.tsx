@@ -2,10 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Check, Copy, Eraser, Info, Loader2, PencilLine, RefreshCw, Square } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Check, Copy, Eraser, ImagePlus, Info, Loader2, PencilLine, RefreshCw, Square } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CommandLine } from "@/components/command-line";
 import { PostToLinkedIn } from "@/components/post-to-linkedin";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,6 +45,8 @@ const LENGTHS: { value: Length; label: string }[] = [
 ];
 
 export function GenerateForm() {
+  const router = useRouter();
+  const [opening, setOpening] = useState(false);
   const [topic, setTopic] = useState("");
   const [experience, setExperience] = useState("");
   const [audience, setAudience] = useState("");
@@ -204,6 +208,24 @@ export function GenerateForm() {
     setLastInput(null);
     setGenerationId(null);
     setError(null);
+  }
+
+  // Saves the draft as a post and opens it in the editor, where images, scheduling and drafts live.
+  async function openInEditor() {
+    setOpening(true);
+    try {
+      const response = await fetch("/api/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: post, source: "generate", topic: lastInput?.topic ?? topic }),
+      });
+      if (!response.ok) throw new Error();
+      const { post: created } = (await response.json()) as { post: { id: string } };
+      router.push(`/posts/${created.id}`);
+    } catch {
+      setError({ message: "Couldn't open the post in the editor." });
+      setOpening(false);
+    }
   }
 
   async function copy() {
@@ -393,6 +415,10 @@ export function GenerateForm() {
                     <RefreshCw />
                     Regenerate
                   </Button>
+                  <Button variant="outline" size="sm" disabled={loading || !post || opening} onClick={openInEditor}>
+                    {opening ? <Loader2 className="animate-spin" /> : <ImagePlus />}
+                    Add images or schedule
+                  </Button>
                   <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
                     {loading ? (
                       <>
@@ -459,25 +485,6 @@ function ErrorAlert({ error }: { error: GenerateError }) {
       <AlertTitle>Couldn&apos;t generate a post</AlertTitle>
       <AlertDescription>{error.message}</AlertDescription>
     </Alert>
-  );
-}
-
-function CommandLine({ command }: { command: string }) {
-  const [copied, setCopied] = useState(false);
-
-  async function copy() {
-    await navigator.clipboard.writeText(command);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  return (
-    <div className="mt-2 flex items-center gap-1 rounded-md bg-muted pl-3 text-foreground">
-      <code className="min-w-0 flex-1 overflow-x-auto py-1.5 font-mono text-xs whitespace-nowrap">{command}</code>
-      <Button variant="ghost" size="icon-sm" aria-label={`Copy "${command}"`} onClick={copy}>
-        {copied ? <Check /> : <Copy />}
-      </Button>
-    </div>
   );
 }
 

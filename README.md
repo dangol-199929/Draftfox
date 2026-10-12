@@ -24,6 +24,7 @@ Then open http://localhost:3000.
 ## Pages
 
 - **Generate** (`/`): enter a topic, your real experience, audience, tone and length. The post streams in as the model writes it; you can stop it, edit it, copy it or regenerate it. If the topic is too vague, the model asks a few questions instead of inventing details.
+- **Posts** (`/posts`): a post editor with your own or generated images (with alt text), drafts saved as you type, Post now, Post later at a chosen time, and automatic posting. See below.
 - **Profile** (`/profile`): optional facts about you and examples of your past posts, so drafts sound like you. Fill it in by hand or import your LinkedIn data (see below).
 - **Prompt** (`/prompt`): edit the system prompt, the standing rules the model follows for every post. Save, discard changes, or reset to the built-in default.
 - **LinkedIn** (`/linkedin`): connect your LinkedIn account with Sign In with LinkedIn, and optionally enable posting. See below.
@@ -61,6 +62,14 @@ Once connected and **Enable posting** is done, a **Post to LinkedIn** button app
 
 After posting you get a **View on LinkedIn** link and an **Undo** button that deletes the post from LinkedIn again.
 
+## Images, scheduling and automatic posting
+
+**Images.** In the post editor, add your own PNG, JPG or GIF images (up to 20, 10 MB each), or generate one with a local image model through Ollama: write a prompt or click **Suggest from post**, pick Landscape, Square or Portrait, and generate. It takes a minute or two on an M-series Mac. Download the model once with `ollama pull x/flux2-klein` (FLUX.2 Klein 4B, about 5.7 GB, Apache 2.0). Ollama's image generation is experimental and works on macOS only for now. Images are stored in `data/images`.
+
+**Post later.** Pick a date and time and click **Schedule**. The app checks every 30 seconds and posts it when it's due. This only works while the app is running (`pnpm dev` or `pnpm start`) on a computer that's awake. If it was off at that time, the post goes out when you start the app again, up to 12 hours late; after that it's marked as missed so you can post or reschedule it.
+
+**Automatic posting.** On the Posts page, set how often (every day, every 3 days or every week), the time, a list of topics, and the audience, tone and length. Each run writes a post about the next topic (and an image, if switched on). By default it's saved as a draft for you to review; choose **Post it right away** to post without review. **Write one now** always saves a draft. Like scheduled posts, runs only happen while the app is running; a run more than 12 hours late is skipped.
+
 ## Reports and LinkedIn analytics
 
 The Reports page is built from what the app records on your computer: each generation, plus an activity log in `data/app.db` (posts published or deleted, drafts copied, LinkedIn connected, profile and prompt changes). Only a post's first line is logged, never the full text. If you imported your LinkedIn data, it also shows how many posts you wrote per month.
@@ -75,6 +84,7 @@ Copy `.env.example` to `.env` and fill in what you need. Everything is optional.
 | --- | --- | --- |
 | `OLLAMA_URL` | `http://localhost:11434` | Where Ollama is running |
 | `OLLAMA_MODEL` | `gemma4:12b` | Which model writes the posts (download it first with `ollama pull <model>`) |
+| `OLLAMA_IMAGE_MODEL` | `x/flux2-klein` | Which model makes images (macOS only for now; download it first with `ollama pull x/flux2-klein`, about 5.7 GB) |
 | `LINKEDIN_CLIENT_ID` | none | Client ID of your LinkedIn app |
 | `LINKEDIN_CLIENT_SECRET` | none | Primary Client Secret of your LinkedIn app. Keep it secret. |
 | `LINKEDIN_REDIRECT_URI` | `http://localhost:3000/api/linkedin/callback` | Must match the redirect URL in your LinkedIn app |

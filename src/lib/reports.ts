@@ -186,8 +186,25 @@ function generationText(row: GenerationRow): string {
 
 function eventText(event: EventRow): string {
   switch (event.type) {
-    case "post_published":
-      return `Posted to LinkedIn (${event.data.visibility === "CONNECTIONS" ? "connections only" : "anyone"})`;
+    case "post_published": {
+      const count = typeof event.data.images === "number" ? event.data.images : 0;
+      const details = `${event.data.visibility === "CONNECTIONS" ? "connections only" : "anyone"}${count ? `, ${count} image${count === 1 ? "" : "s"}` : ""}`;
+      if (event.data.reason === "scheduled") return `A scheduled post went out (${details})`;
+      if (event.data.reason === "autopilot") return `An automatic post went out (${details})`;
+      return `Posted to LinkedIn (${details})`;
+    }
+    case "post_scheduled":
+      return "Scheduled a post";
+    case "image_generated":
+      return "Generated an image";
+    case "image_uploaded":
+      return "Added an image";
+    case "autopilot_ran":
+      return event.data.posted
+        ? "Automatic posting wrote and posted a post"
+        : event.data.ok
+          ? "Automatic posting wrote a draft"
+          : "Automatic posting couldn't write a post";
     case "post_deleted":
       return "Deleted a post from LinkedIn";
     case "post_failed":

@@ -1,7 +1,8 @@
 // Server-only: the local SQLite database in data/app.db, through Node's built-in node:sqlite (no native build step).
 // Holds what you're working on (form contents and unsaved edits) so it survives page switches and reloads,
 // and every generated post, so a post finished while you were on another page isn't lost.
-// Also an activity log (posts published, drafts copied, LinkedIn connected...) that the Reports page reads.
+// Also an activity log (posts published, drafts copied, LinkedIn connected...) that the Reports page reads,
+// the posts you edit, schedule or publish from the Posts page, their images (files in data/images), and settings.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -42,6 +43,36 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS events_at ON events (at);
   CREATE INDEX IF NOT EXISTS generations_started_at ON generations (started_at);
+  CREATE TABLE IF NOT EXISTS posts (
+    id TEXT PRIMARY KEY,
+    text TEXT NOT NULL,
+    images TEXT NOT NULL,
+    visibility TEXT NOT NULL,
+    status TEXT NOT NULL,
+    source TEXT NOT NULL,
+    topic TEXT,
+    scheduled_at TEXT,
+    posted_at TEXT,
+    urn TEXT,
+    url TEXT,
+    error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS posts_status ON posts (status, scheduled_at);
+  CREATE TABLE IF NOT EXISTS images (
+    id TEXT PRIMARY KEY,
+    file TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    source TEXT NOT NULL,
+    prompt TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
 `;
 
 // One connection per server process; kept on globalThis so dev hot reloads don't open a new one each time.
@@ -124,7 +155,11 @@ export const EVENT_TYPES = [
   "post_published",
   "post_deleted",
   "post_failed",
+  "post_scheduled",
   "draft_copied",
+  "image_generated",
+  "image_uploaded",
+  "autopilot_ran",
   "linkedin_connected",
   "linkedin_disconnected",
   "profile_saved",
@@ -161,4 +196,202 @@ export function listEvents(since: string | null): EventRow[] {
     }
     return { ...row, data };
   });
+}
+
+// --- Posts (drafts, scheduled and published) ---
+
+export type PostImage = { id: string; alt: string };
+export type PostStatus = "draft" | "scheduled" | "publishing" | "posted" | "failed" | "deleted";
+export type PostSource = "editor" | "generate" | "autopilot";
+
+export type PostRecord = {
+  id: string;
+  text: string;
+  images: PostImage[];
+  visibility: "PUBLIC" | "CONNECTIONS";
+  status: PostStatus;
+  source: PostSource;
+  topic: string | null;
+  scheduledAt: string | null;
+  postedAt: string | null;
+  urn: string | null;
+  url: string | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type PostRow = {
+  id: string;
+  text: string;
+  images: string;
+  visibility: string;
+  status: string;
+  source: string;
+  topic: string | null;
+  scheduled_at: string | null;
+  posted_at: string | null;
+  urn: string | null;
+  url: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function toPost(row: PostRow): PostRecord {
+  let images: PostImage[] = [];
+  try {
+    images = JSON.parse(row.images) as PostImage[];
+  } catch {
+    // Keep the post without images.
+  }
+  return {
+    id: row.id,
+    text: row.text,
+    images,
+    visibility: row.visibility === "CONNECTIONS" ? "CONNECTIONS" : "PUBLIC",
+    status: row.status as PostStatus,
+    source: row.source as PostSource,
+    topic: row.topic,
+    scheduledAt: row.scheduled_at,
+    postedAt: row.posted_at,
+    urn: row.urn,
+    url: row.url,
+    error: row.error,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function insertPost(post: PostRecord): void {
+  db()
+    .prepare(
+      `INSERT INTO posts (id, text, images, visibility, status, source, topic, scheduled_at, posted_at, urn, url, error,
+         created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      post.id,
+      post.text,
+      JSON.stringify(post.images),
+      post.visibility,
+      post.status,
+      post.source,
+      post.topic,
+      post.scheduledAt,
+      post.postedAt,
+      post.urn,
+      post.url,
+      post.error,
+      post.createdAt,
+      post.updatedAt,
+    );
+}
+
+export function getPost(id: string): PostRecord | null {
+  const row = db().prepare("SELECT * FROM posts WHERE id = ?").get(id) as PostRow | undefined;
+  return row ? toPost(row) : null;
+}
+
+export function listPosts(): PostRecord[] {
+  return (db().prepare("SELECT * FROM posts ORDER BY updated_at DESC").all() as PostRow[]).map(toPost);
+}
+
+export function duePosts(now: string): PostRecord[] {
+  return (
+    db().prepare("SELECT * FROM posts WHERE status = 'scheduled' AND scheduled_at <= ? ORDER BY scheduled_at").all(now) as PostRow[]
+  ).map(toPost);
+}
+
+const POST_COLUMNS: Record<string, string> = {
+  text: "text",
+  images: "images",
+  visibility: "visibility",
+  status: "status",
+  topic: "topic",
+  scheduledAt: "scheduled_at",
+  postedAt: "posted_at",
+  urn: "urn",
+  url: "url",
+  error: "error",
+};
+
+type PostChanges = Partial<Omit<PostRecord, "id" | "source" | "createdAt" | "updatedAt">>;
+
+// Updates the given fields. With `onlyIfStatus`, only when the post still has that status, so two callers
+// (say, the scheduler and a click on Post now) can't both publish it. Returns whether a row changed.
+export function updatePost(id: string, changes: PostChanges, onlyIfStatus?: PostStatus): boolean {
+  const sets: string[] = [];
+  const values: (string | null)[] = [];
+  for (const [field, value] of Object.entries(changes)) {
+    const column = POST_COLUMNS[field];
+    if (!column || value === undefined) continue;
+    sets.push(`${column} = ?`);
+    values.push(field === "images" ? JSON.stringify(value) : (value as string | null));
+  }
+  sets.push("updated_at = ?");
+  values.push(new Date().toISOString());
+  let sql = `UPDATE posts SET ${sets.join(", ")} WHERE id = ?`;
+  values.push(id);
+  if (onlyIfStatus) {
+    sql += " AND status = ?";
+    values.push(onlyIfStatus);
+  }
+  return Number(db().prepare(sql).run(...values).changes) > 0;
+}
+
+export function deletePostRecord(id: string): void {
+  db().prepare("DELETE FROM posts WHERE id = ?").run(id);
+}
+
+// Images still used by any post, so deleting a draft doesn't remove an image another post shares.
+export function imageInUse(imageId: string): boolean {
+  const pattern = `%"id":"${imageId}"%`;
+  return db().prepare("SELECT 1 FROM posts WHERE images LIKE ? LIMIT 1").get(pattern) !== undefined;
+}
+
+// --- Images (the files live in data/images) ---
+
+export type ImageRecord = {
+  id: string;
+  file: string;
+  mime: string;
+  source: "upload" | "generated";
+  prompt: string | null;
+  created_at: string;
+};
+
+export function insertImage(image: ImageRecord): void {
+  db()
+    .prepare("INSERT INTO images (id, file, mime, source, prompt, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(image.id, image.file, image.mime, image.source, image.prompt, image.created_at);
+}
+
+export function getImage(id: string): ImageRecord | null {
+  return (db().prepare("SELECT * FROM images WHERE id = ?").get(id) as ImageRecord | undefined) ?? null;
+}
+
+export function deleteImageRecord(id: string): void {
+  db().prepare("DELETE FROM images WHERE id = ?").run(id);
+}
+
+// --- Settings ---
+
+export function readSetting<T>(key: string): T | null {
+  const row = db().prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | undefined;
+  if (!row) return null;
+  try {
+    return JSON.parse(row.value) as T;
+  } catch {
+    return null;
+  }
+}
+
+export function writeSetting(key: string, value: unknown): void {
+  db()
+    .prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    )
+    .run(key, JSON.stringify(value), new Date().toISOString());
 }

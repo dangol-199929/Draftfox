@@ -181,8 +181,31 @@ export function escapeLittleText(text: string): string {
   return text.replace(/[\\|{}@[\]()<>#*_~]/g, "\\$&");
 }
 
-export async function createPost({ text, visibility }: { text: string; visibility: Visibility }): Promise<string> {
+// LinkedIn allows up to 20 images in one post.
+export const MAX_POST_IMAGES = 20;
+
+export type PostImageUpload = { data: Uint8Array; mime: string; altText: string };
+
+export async function createPost({
+  text,
+  visibility,
+  images = [],
+}: {
+  text: string;
+  visibility: Visibility;
+  images?: PostImageUpload[];
+}): Promise<string> {
   const connection = await requirePostingConnection();
+  if (images.length > MAX_POST_IMAGES) throw new LinkedInError(400, `A post can have at most ${MAX_POST_IMAGES} images.`);
+  // Images are uploaded first; each becomes an image URN the post refers to.
+  const media: { id: string; altText?: string }[] = [];
+  for (const image of images) {
+    const id = await uploadImage(connection, image);
+    media.push(image.altText.trim() ? { id, altText: image.altText.trim().slice(0, 4086) } : { id });
+  }
+  const content =
+    media.length === 1 ? { media: media[0] } : media.length > 1 ? { multiImage: { images: media } } : undefined;
+
   const response = await postsRequest(connection, "/rest/posts", {
     method: "POST",
     body: JSON.stringify({
@@ -190,6 +213,7 @@ export async function createPost({ text, visibility }: { text: string; visibilit
       commentary: escapeLittleText(text),
       visibility,
       distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] },
+      ...(content && { content }),
       lifecycleState: "PUBLISHED",
       isReshareDisabledByAuthor: false,
     }),
@@ -197,6 +221,31 @@ export async function createPost({ text, visibility }: { text: string; visibilit
   const urn = response.headers.get("x-restli-id");
   if (!urn) throw new LinkedInError(502, "LinkedIn accepted the post but didn't return its ID.");
   return urn;
+}
+
+// Registers an upload with LinkedIn's Images API, then sends the bytes to the upload URL it returns.
+async function uploadImage(connection: Connection, image: PostImageUpload): Promise<string> {
+  const init = await postsRequest(connection, "/rest/images?action=initializeUpload", {
+    method: "POST",
+    body: JSON.stringify({ initializeUploadRequest: { owner: `urn:li:person:${connection.profile.sub}` } }),
+  });
+  const { value } = (await init.json()) as { value?: { uploadUrl?: string; image?: string } };
+  if (!value?.uploadUrl || !value.image) throw new LinkedInError(502, "LinkedIn didn't return an image upload URL.");
+
+  let upload: Response;
+  try {
+    upload = await fetch(value.uploadUrl, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${connection.accessToken}`, "Content-Type": image.mime },
+      body: new Uint8Array(image.data),
+    });
+  } catch {
+    throw new LinkedInError(502, "Couldn't upload the image to LinkedIn. Check your internet connection and try again.");
+  }
+  if (!upload.ok) {
+    throw new LinkedInError(502, `LinkedIn rejected the image upload (${upload.status}).`);
+  }
+  return value.image;
 }
 
 export async function deletePost(urn: string): Promise<void> {

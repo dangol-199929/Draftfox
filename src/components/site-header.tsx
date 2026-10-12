@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 const links = [
   { href: "/", label: "Generate" },
+  { href: "/posts", label: "Posts" },
   { href: "/profile", label: "Profile" },
   { href: "/prompt", label: "Prompt" },
   { href: "/linkedin", label: "LinkedIn" },
@@ -29,7 +30,7 @@ export function SiteHeader() {
               href={link.href}
               className={cn(
                 "rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-                pathname === link.href && "bg-muted text-foreground",
+                (link.href === "/" ? pathname === "/" : pathname.startsWith(link.href)) && "bg-muted text-foreground",
               )}
             >
               {link.label}
