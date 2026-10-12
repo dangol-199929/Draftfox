@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { useSavedState } from "@/lib/use-saved-state.ts";
 
 type PromptState = {
   prompt: string;
@@ -57,12 +58,8 @@ export function PromptEditor() {
       .catch((err: Error) => setError(`Couldn't load the prompt: ${err.message}`));
   }, []);
 
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
+  // Unsaved edits are kept in the local database until you save or discard them.
+  useSavedState<string>("prompt", dirty ? draft : null, setDraft, saved !== null);
 
   async function update(method: "PUT" | "DELETE") {
     setBusy(method === "PUT" ? "saving" : "resetting");

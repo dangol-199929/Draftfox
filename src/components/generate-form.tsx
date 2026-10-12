@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Check, Copy, Info, Loader2, PencilLine, RefreshCw, Square } from "lucide-react";
+import { Check, Copy, Eraser, Info, Loader2, PencilLine, RefreshCw, Square } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,10 +13,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { Profile } from "@/lib/profile.ts";
 import type { PostInput } from "@/lib/prompts.ts";
+import { useSavedState } from "@/lib/use-saved-state.ts";
 
 type Length = NonNullable<PostInput["length"]>;
 
 type GenerateError = { message: string; code?: string; model?: string };
+
+// What's kept across page switches and reloads: the form, the current draft and what produced it.
+type SavedGenerate = {
+  topic: string;
+  experience: string;
+  audience: string;
+  tone: string;
+  length: Length;
+  post: string;
+  seconds: number | null;
+  lastInput: PostInput | null;
+};
 
 const NEED_MORE_CONTEXT = "NEED MORE CONTEXT:";
 
@@ -43,6 +56,21 @@ export function GenerateForm() {
   const experienceRef = useRef<HTMLTextAreaElement>(null);
   const [profileNote, setProfileNote] = useState<string | null>(null);
 
+  const restored = useSavedState<SavedGenerate>(
+    "generate",
+    { topic, experience, audience, tone, length, post, seconds, lastInput },
+    (saved) => {
+      setTopic(saved.topic ?? "");
+      setExperience(saved.experience ?? "");
+      setAudience(saved.audience ?? "");
+      setTone(saved.tone ?? "");
+      if (LENGTHS.some((option) => option.value === saved.length)) setLength(saved.length);
+      setPost(saved.post ?? "");
+      setSeconds(saved.seconds ?? null);
+      setLastInput(saved.lastInput ?? null);
+    },
+  );
+
   useEffect(() => {
     fetch("/api/profile")
       .then((response) => response.json() as Promise<{ profile?: Profile; exists?: boolean }>)
@@ -50,7 +78,7 @@ export function GenerateForm() {
       .catch(() => setProfileNote(null));
   }, []);
 
-  const canGenerate = topic.trim() !== "" && !loading;
+  const canGenerate = restored && topic.trim() !== "" && !loading;
   const words = post.split(/\s+/).filter(Boolean).length;
   const questions = !loading && post.startsWith(NEED_MORE_CONTEXT) ? parseQuestions(post) : null;
 
@@ -116,6 +144,19 @@ export function GenerateForm() {
   function submit() {
     if (!canGenerate) return;
     generate({ topic, experience, audience, tone, length });
+  }
+
+  // Empties the form and the draft (and so the saved copy), keeping the chosen length.
+  function clear() {
+    if (post && !window.confirm("Clear the form and your current draft?")) return;
+    setTopic("");
+    setExperience("");
+    setAudience("");
+    setTone("");
+    setPost("");
+    setSeconds(null);
+    setLastInput(null);
+    setError(null);
   }
 
   async function copy() {
@@ -215,9 +256,20 @@ export function GenerateForm() {
                 Stop
               </Button>
             ) : (
-              <Button type="submit" disabled={!canGenerate}>
-                Generate
-              </Button>
+              <div className="flex gap-2">
+                <Button type="submit" className="flex-1" disabled={!canGenerate}>
+                  Generate
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!restored || !(topic || experience || audience || tone || post)}
+                  onClick={clear}
+                >
+                  <Eraser />
+                  Start over
+                </Button>
+              </div>
             )}
           </form>
           {profileNote !== null && (

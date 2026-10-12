@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { ImportSummary, Profile } from "@/lib/profile.ts";
+import { useSavedState } from "@/lib/use-saved-state.ts";
 
 type ProfileResponse = { profile: Profile; exists?: boolean; summary?: ImportSummary; error?: string };
 
@@ -62,12 +63,14 @@ export function ProfileEditor() {
       .catch((err: Error) => setError(`Couldn't load your profile: ${err.message}`));
   }, []);
 
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
+  // Unsaved edits are kept in the local database until you save or discard them.
+  // Merged over the saved profile so a draft from an older version of the app still has every field.
+  useSavedState<Partial<Profile>>(
+    "profile",
+    dirty ? draft : null,
+    (unsaved) => setDraft((current) => (current ? { ...current, ...unsaved } : current)),
+    saved !== null,
+  );
 
   async function run(kind: "saving" | "deleting" | "importing", action: () => Promise<ProfileResponse>) {
     setBusy(kind);

@@ -92,6 +92,7 @@ Everything stays on your computer in the `data/` folder, which is gitignored:
 - `data/settings.json`: your edited system prompt, if you changed it.
 - `data/profile.json`: your profile facts and past posts, if you added them. "Delete all profile data" removes it.
 - `data/linkedin.json`: your LinkedIn name, email, photo URL and access token, if you connected. Disconnecting deletes it.
+- `data/app.db`: a small SQLite database (Node's built-in `node:sqlite`, nothing to install) that keeps what you're working on: the Generate form and current draft, and unsaved edits on the Prompt and Profile pages. They come back when you switch pages or reload. "Start over" on Generate clears the draft; Save or Discard changes clears the unsaved edits.
 
 Comparison runs from `pnpm test:posts` go to `outputs/`, also gitignored.
 
