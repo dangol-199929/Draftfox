@@ -5,13 +5,14 @@ import { usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 
-const links = [
+const links: { href: string; label: string; soon?: boolean }[] = [
   { href: "/", label: "Generate" },
   { href: "/posts", label: "Posts" },
   { href: "/profile", label: "Profile" },
   { href: "/prompt", label: "Prompt" },
   { href: "/linkedin", label: "LinkedIn" },
   { href: "/reports", label: "Reports" },
+  { href: "/jobs", label: "Jobs", soon: true },
 ];
 
 export function SiteHeader() {
@@ -34,6 +35,11 @@ export function SiteHeader() {
               )}
             >
               {link.label}
+              {link.soon && (
+                <span className="ml-1.5 rounded-full bg-muted-foreground/15 px-1.5 py-0.5 text-[10px] font-medium uppercase">
+                  Soon
+                </span>
+              )}
             </Link>
           ))}
         </nav>

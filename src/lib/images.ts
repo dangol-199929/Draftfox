@@ -1,9 +1,9 @@
 // Server-only: post images, uploaded or made by a local image model (mflux, ComfyUI or Ollama).
 // Files are kept in data/images on this machine; the database only stores their names.
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { deleteImageRecord, getImage, imageInUse, insertImage, logEvent, type ImageRecord } from "./db.ts";
+import { deleteImageRecord, getImage, imageInUse, insertImage, listImages, logEvent, type ImageRecord } from "./db.ts";
 import { ImageEngineError, imageEngine, type ImageProgress } from "./image-engines/index.ts";
 import { generateText } from "./ollama.ts";
 
@@ -62,6 +62,43 @@ export async function removeImageIfUnused(id: string): Promise<void> {
   if (!record) return;
   deleteImageRecord(id);
   await rm(join(IMAGE_DIR, record.file), { force: true });
+}
+
+// Images no post uses, such as cartoons behind a card, redrawn cards or pictures you didn't keep, are deleted
+// once they're a day old; the day leaves time to add a fresh one to a post. Also removes stray files with no record.
+const KEEP_UNUSED = 24 * 60 * 60 * 1000;
+
+export async function cleanupImages(now = Date.now()): Promise<{ deleted: number; bytes: number }> {
+  let deleted = 0;
+  let bytes = 0;
+  const known = new Set<string>();
+  for (const record of listImages()) {
+    known.add(record.file);
+    if (now - Date.parse(record.created_at) < KEEP_UNUSED || imageInUse(record.id)) continue;
+    bytes += await fileSize(record.file);
+    deleteImageRecord(record.id);
+    await rm(join(IMAGE_DIR, record.file), { force: true });
+    deleted++;
+  }
+  let files: string[] = [];
+  try {
+    files = await readdir(IMAGE_DIR);
+  } catch {
+    // No images folder yet.
+  }
+  for (const file of files) {
+    if (known.has(file)) continue;
+    const info = await stat(join(IMAGE_DIR, file)).catch(() => null);
+    if (!info?.isFile() || now - info.mtimeMs < KEEP_UNUSED) continue;
+    bytes += info.size;
+    await rm(join(IMAGE_DIR, file), { force: true });
+    deleted++;
+  }
+  return { deleted, bytes };
+}
+
+async function fileSize(file: string): Promise<number> {
+  return (await stat(join(IMAGE_DIR, file)).catch(() => null))?.size ?? 0;
 }
 
 // Checks the first bytes, so a renamed file can't pass as an image.

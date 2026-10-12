@@ -371,6 +371,10 @@ export function getImage(id: string): ImageRecord | null {
   return (db().prepare("SELECT * FROM images WHERE id = ?").get(id) as ImageRecord | undefined) ?? null;
 }
 
+export function listImages(): ImageRecord[] {
+  return db().prepare("SELECT * FROM images").all() as ImageRecord[];
+}
+
 export function deleteImageRecord(id: string): void {
   db().prepare("DELETE FROM images WHERE id = ?").run(id);
 }
