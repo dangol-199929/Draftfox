@@ -22,10 +22,11 @@ Draftfox was built to fix that:
 - **Add images that stop the scroll.** Make a designed card with a hook, key points and a simple cartoon, or a plain picture, or add your own photos.
 - **Post now, later or automatically.** Publish straight to LinkedIn after a final preview, schedule a post for a date and time, or let it write a post every day, every 3 days or every week from your list of topics, either saved for your review or posted right away.
 - **See your progress.** The Reports page shows how many drafts you've written and posted over time, which tones and lengths you use, and links to everything you published.
+- **Apply for jobs with less busywork.** Paste a job you found and see how it fits your profile, with strengths and gaps. Get a cover letter and answers to application questions written only from your real experience, and track each job from saved to offer. You always open the job and click Apply yourself.
 
 ## Ways people use it
 
-- **Job seekers and students** who want to stay visible to recruiters by sharing what they learn, without spending an hour on each post.
+- **Job seekers and students** who want to stay visible to recruiters by sharing what they learn, and to tailor each application without inventing anything.
 - **Developers and other professionals** who turn their work into short lessons, tips and stories.
 - **Freelancers and founders** who want a steady posting schedule with a consistent visual style.
 - **Anyone careful about privacy** who doesn't want to paste personal stories into an online AI tool.
@@ -40,10 +41,6 @@ Draftfox is a small web app (Next.js) that runs at `localhost:3000` on your comp
 - **Storage:** drafts, settings and history live in a small database file in the `data/` folder on your computer.
 
 LinkedIn doesn't give personal apps access to post analytics (views, reactions, followers), so those stay on LinkedIn itself.
-
-## Coming soon
-
-A **job search helper** to find roles that match your profile, tailor your resume and draft cover letters, while you always click Apply yourself.
 
 ## Get started
 

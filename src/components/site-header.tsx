@@ -8,23 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
-const links: { href: string; label: string; soon?: boolean }[] = [
+const links: { href: string; label: string }[] = [
   { href: "/", label: "Generate" },
   { href: "/posts", label: "Posts" },
   { href: "/profile", label: "Profile" },
   { href: "/prompt", label: "Prompt" },
   { href: "/linkedin", label: "LinkedIn" },
   { href: "/reports", label: "Reports" },
-  { href: "/jobs", label: "Jobs", soon: true },
+  { href: "/jobs", label: "Jobs" },
 ];
-
-function SoonBadge() {
-  return (
-    <span className="ml-1.5 rounded-full bg-muted-foreground/15 px-1.5 py-0.5 text-[10px] font-medium uppercase">
-      Soon
-    </span>
-  );
-}
 
 export function SiteHeader() {
   const pathname = usePathname();
@@ -49,7 +41,6 @@ export function SiteHeader() {
               )}
             >
               {link.label}
-              {link.soon && <SoonBadge />}
             </Link>
           ))}
         </nav>
@@ -82,7 +73,6 @@ export function SiteHeader() {
                     )}
                   >
                     {link.label}
-                    {link.soon && <SoonBadge />}
                   </Link>
                 </SheetClose>
               ))}

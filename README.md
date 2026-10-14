@@ -35,6 +35,7 @@ Then open http://localhost:3000.
 - **Prompt** (`/prompt`): edit the system prompt, the standing rules the model follows for every post. Save, discard changes, or reset to the built-in default.
 - **LinkedIn** (`/linkedin`): connect your LinkedIn account with Sign In with LinkedIn, and optionally enable posting. See below.
 - **Reports** (`/reports`): drafts generated, copied and posted over the last 7, 30 or 90 days or all time, with a chart, the lengths and tones you use, recent activity and links to the posts you published. See below.
+- **Jobs** (`/jobs`): paste a job you found, see how it fits your profile, and draft a cover letter and answers to application questions. See below.
 
 ## Profile and LinkedIn data import (optional)
 
@@ -101,6 +102,17 @@ To use your own ComfyUI workflow instead of the built-in one, export it with **E
 
 **Automatic posting.** On the Posts page, set how often (every day, every 3 days or every week), the time, a list of topics, and the audience, tone and length. Each run writes a post about the next topic (and an image, if switched on). By default it's saved as a draft for you to review; choose **Post it right away** to post without review. **Write one now** always saves a draft. Like scheduled posts, runs only happen while the app is running; a run more than 12 hours late is skipped.
 
+## Jobs
+
+Paste a job you found (title, company, link and the description); nothing is fetched from job sites. On the job's page:
+
+- **Fit with your profile** lists what the job asks for that your profile shows (with where it's shown) and what your profile doesn't show.
+- **Cover letter** is written from what matches. Requirements your profile doesn't show are left out of the letter and listed for you, so you decide what to say. Edit it on the page and copy it.
+- **Application questions**: paste the form's questions, one per line. Answers use only your profile; questions it can't answer (salary, notice period, a skill you haven't listed) are left blank with a note.
+- **Status** (saved, applied, interview, offer, rejected) with the date of each change, a next-step date and notes.
+
+Everything is written from the Profile page, so fill it in or import your LinkedIn data first. Numbers or names in a draft that aren't in your profile are flagged for you to check. **Open the job to apply** opens the posting in your browser; Draftfox never applies for you.
+
 ## Reports and LinkedIn analytics
 
 The Reports page is built from what the app records on your computer: each generation, plus an activity log in `data/app.db` (posts published or deleted, drafts copied, LinkedIn connected, profile and prompt changes). Only a post's first line is logged, never the full text. If you imported your LinkedIn data, it also shows how many posts you wrote per month.
@@ -137,6 +149,7 @@ Copy `.env.example` to `.env` and fill in what you need. Everything is optional.
 | `pnpm build` | Production build |
 | `pnpm start` | Serve the production build |
 | `pnpm typecheck` | Type-check the project |
+| `pnpm test:jobs` | Check fit, write a cover letter and answer questions for a sample profile and job in `scripts/test-jobs.ts`, printing the results |
 | `pnpm test:posts` | Generate posts from the sample inputs in `scripts/test-posts.ts` and save them to `outputs/` for side-by-side comparison |
 
 ## Where data is stored
@@ -146,7 +159,7 @@ Everything stays on your computer in the `data/` folder, which is gitignored:
 - `data/settings.json`: your edited system prompt, if you changed it.
 - `data/profile.json`: your profile facts and past posts, if you added them. "Delete all profile data" removes it.
 - `data/linkedin.json`: your LinkedIn name, email, photo URL and access token, if you connected. Disconnecting deletes it.
-- `data/app.db`: a small SQLite database (Node's built-in `node:sqlite`, nothing to install) that keeps what you're working on: the Generate form and current draft, unsaved edits on the Prompt and Profile pages, and each generated post. Generation runs on the server, so it keeps going if you switch pages or reload. They come back when you switch pages or reload. "Start over" on Generate clears the draft; Save or Discard changes clears the unsaved edits.
+- `data/app.db`: a small SQLite database (Node's built-in `node:sqlite`, nothing to install) that keeps what you're working on: the Generate form and current draft, unsaved edits on the Prompt and Profile pages, each generated post, and the jobs you track on the Jobs page. Generation runs on the server, so it keeps going if you switch pages or reload. They come back when you switch pages or reload. "Start over" on Generate clears the draft; Save or Discard changes clears the unsaved edits.
 
 Comparison runs from `pnpm test:posts` go to `outputs/`, also gitignored.
 
