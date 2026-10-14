@@ -35,6 +35,8 @@ export type Profile = {
   education: Education[];
   posts: PastPost[];
   facts: string;
+  // The text of your CV, pasted or imported from a .docx or .txt file. Used on the Jobs page, not in posts.
+  cv: string;
   useFacts: boolean;
   useStyle: boolean;
 };
@@ -60,6 +62,7 @@ export const EMPTY_PROFILE: Profile = {
   education: [],
   posts: [],
   facts: "",
+  cv: "",
   useFacts: true,
   useStyle: true,
 };
@@ -295,7 +298,7 @@ export function parseCsv(text: string): string[][] {
 
 // --- Validation for PUT /api/profile ---
 
-const LIMITS = { short: 300, long: 10_000, list: 200 };
+const LIMITS = { short: 300, long: 10_000, list: 200, cv: 30_000 };
 
 export function validateProfile(value: unknown): Profile | string {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return "Profile must be a JSON object.";
@@ -329,6 +332,7 @@ export function validateProfile(value: unknown): Profile | string {
     industry: text("industry", LIMITS.short),
     location: text("location", LIMITS.short),
     facts: text("facts", LIMITS.long),
+    cv: text("cv", LIMITS.cv),
   };
   for (const [field, v] of Object.entries(strings)) {
     if (v === null) return `"${field}" must be text of reasonable length.`;
@@ -361,7 +365,41 @@ export function validateProfile(value: unknown): Profile | string {
     education,
     posts,
     facts: strings.facts!,
+    cv: strings.cv!,
     useFacts: data.useFacts !== false,
     useStyle: data.useStyle !== false,
   };
+}
+
+// --- CV import ---
+
+// Reads the text of a CV: a Word .docx (the text of word/document.xml, paragraph by paragraph) or plain text.
+// Nothing is saved here; the text goes into the Profile page for you to check and save.
+export function readCvFile(name: string, data: Uint8Array): string {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".docx")) {
+    const entries = unzipSync(data, { filter: (file) => file.name === "word/document.xml" });
+    const xml = entries["word/document.xml"];
+    if (!xml) throw new Error("This .docx has no document text.");
+    return docxText(new TextDecoder("utf-8").decode(xml));
+  }
+  if (/\.(txt|md|text)$/.test(lower)) return new TextDecoder("utf-8").decode(data).replace(/\r\n?/g, "\n").trim();
+  throw new Error("Choose a .docx or .txt file. For a PDF, open it, copy the text and paste it into the CV box.");
+}
+
+function docxText(xml: string): string {
+  return xml
+    .replace(/<w:tab\/>/g, "\t")
+    .replace(/<w:(br|cr)\/>/g, "\n")
+    .replace(/<\/w:p>/g, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&(lt|gt|amp|quot|apos|#\d+|#x[\da-f]+);/gi, (entity, code: string) => {
+      const named: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'" };
+      if (named[code.toLowerCase()]) return named[code.toLowerCase()];
+      const number = code[1].toLowerCase() === "x" ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+      return Number.isFinite(number) ? String.fromCodePoint(number) : entity;
+    })
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }

@@ -15,6 +15,7 @@ const PROMPT_DESCRIPTION = 9000;
 const PROMPT_POSITION = 900;
 const PROMPT_SUMMARY = 1500;
 const PROMPT_FACTS = 1500;
+const PROMPT_CV = 5000;
 
 // --- Prompt text ---
 
@@ -24,6 +25,7 @@ export function hasProfileContent(profile: Profile | null): profile is Profile {
     profile.headline.trim() ||
       profile.summary.trim() ||
       profile.facts.trim() ||
+      profile.cv.trim() ||
       profile.positions.length > 0 ||
       profile.skills.length > 0 ||
       profile.education.length > 0,
@@ -59,6 +61,7 @@ export function profileText(profile: Profile): string {
     }
   }
   if (profile.facts.trim()) lines.push(`Other facts they wrote about themselves: ${clip(profile.facts.trim(), PROMPT_FACTS)}`);
+  if (profile.cv.trim()) lines.push(`CV:\n${clip(profile.cv.trim(), PROMPT_CV)}`);
   return lines.join("\n");
 }
 

@@ -45,6 +45,8 @@ export function ProfileEditor() {
   const [postsOpen, setPostsOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const cvInput = useRef<HTMLInputElement>(null);
+  const [cvLoading, setCvLoading] = useState(false);
 
   const dirty = saved !== null && draft !== null && JSON.stringify(saved) !== JSON.stringify(draft);
 
@@ -110,6 +112,25 @@ export function ProfileEditor() {
       setGuideOpen(false);
     }
     if (fileInput.current) fileInput.current.value = "";
+  }
+
+  // Puts the CV's text in the box; it's saved with the rest of the profile when you click Save.
+  async function importCv(file: File) {
+    const form = new FormData();
+    form.append("file", file);
+    setCvLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/profile/cv", { method: "POST", body: form });
+      const data = (await response.json().catch(() => ({}))) as { text?: string; error?: string };
+      if (!response.ok || !data.text) throw new Error(data.error ?? "Couldn't read that file.");
+      update({ cv: data.text });
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setCvLoading(false);
+      if (cvInput.current) cvInput.current.value = "";
+    }
   }
 
   function update(changes: Partial<Profile>) {
@@ -277,6 +298,37 @@ export function ProfileEditor() {
                 onChange={(event) => update({ facts: event.target.value })}
               />
               <p className="text-xs text-muted-foreground">Things the model may say about you. Only write what&apos;s true.</p>
+            </div>
+
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="cv">CV</Label>
+                <Button size="xs" variant="outline" disabled={cvLoading} onClick={() => cvInput.current?.click()}>
+                  {cvLoading ? <Loader2 className="animate-spin" /> : <FileUp />}
+                  Import .docx or .txt
+                </Button>
+                <input
+                  ref={cvInput}
+                  type="file"
+                  accept=".docx,.txt,.md"
+                  className="hidden"
+                  aria-label="Choose a CV file"
+                  onChange={(event) => event.target.files?.[0] && importCv(event.target.files[0])}
+                />
+              </div>
+              <Textarea
+                id="cv"
+                rows={6}
+                maxLength={30_000}
+                value={draft.cv}
+                placeholder="Paste the text of your CV, or import it."
+                onChange={(event) => update({ cv: event.target.value })}
+                className="max-h-96"
+              />
+              <p className="text-xs text-muted-foreground">
+                Used on the Jobs page to rank jobs, check fit and write cover letters, not in posts. For a PDF, copy its
+                text and paste it here.
+              </p>
             </div>
 
             <div className="grid gap-3">
