@@ -4,12 +4,14 @@
 // - Adzuna (adzuna.com): jobs in many countries, with a free API key in ADZUNA_APP_ID and ADZUNA_APP_KEY.
 // The boards ask that results credit them and link to the original posting, which the page does.
 // LinkedIn has no job search API for personal apps, so LinkedIn, Seek and Indeed are offered as links instead.
-import { findCountry, type SourceName } from "./job-links.ts";
+import { randomUUID } from "node:crypto";
+import { readSetting, writeSetting } from "./db.ts";
+import { findCountry, MAX_QUERIES, MAX_SKILLS, type SearchInput, type SourceName } from "./job-links.ts";
+
+export { MAX_QUERIES, MAX_SKILLS, type SearchInput };
 import { generateJson } from "./ollama.ts";
 import type { Profile } from "./profile.ts";
 
-export const MAX_QUERIES = 3;
-export const MAX_SKILLS = 30;
 const MAX_RESULTS = 40;
 const DESCRIPTION_LENGTH = 6000;
 const TIMEOUT = 15_000;
@@ -28,6 +30,8 @@ export type FoundJob = {
   // Profile words found in the posting, best first.
   matched: string[];
   score: number;
+  // With a saved search: true when this search hadn't shown the job before.
+  isNew?: boolean;
 };
 
 export type SourceResult = { name: SourceName; count: number; error?: string; skipped?: string };
@@ -151,8 +155,6 @@ async function adzuna(query: string, countryCode: string, place: string): Promis
 
 // --- Search ---
 
-// skills: extra skills to rank by, on top of the profile's own list (see suggestSearches).
-export type SearchInput = { queries: string[]; country: string; place: string; skills: string[] };
 
 // Runs each search on each source at once. A source that fails is reported, not fatal.
 export async function searchJobs(input: SearchInput, profile: Profile | null): Promise<{ results: FoundJob[]; sources: SourceResult[] }> {
@@ -361,4 +363,67 @@ function salaryText(min: number | null | undefined, max: number | null | undefin
   if (min && max && min !== max) return `${unit}${format(min)}–${format(max)}`;
   if (min || max) return `${unit}${format((min || max)!)}`;
   return null;
+}
+
+// --- Saved searches ---
+
+// A search you want to run again. `seen` holds the ids of jobs it has already shown, so the next run can mark
+// what's new since last time. Kept in the settings table.
+export type SavedSearch = {
+  id: string;
+  name: string;
+  queries: string[];
+  country: string;
+  place: string;
+  skills: string[];
+  seen: string[];
+  lastRun: string | null;
+  createdAt: string;
+};
+
+const SAVED_SEARCHES = "jobSearches";
+const MAX_SAVED_SEARCHES = 20;
+const MAX_SEEN = 3000;
+
+export function listSavedSearches(): SavedSearch[] {
+  return readSetting<SavedSearch[]>(SAVED_SEARCHES) ?? [];
+}
+
+export function addSavedSearch(input: SearchInput & { name: string }): SavedSearch | string {
+  const searches = listSavedSearches();
+  if (searches.length >= MAX_SAVED_SEARCHES) return `You can keep up to ${MAX_SAVED_SEARCHES} saved searches. Delete one first.`;
+  const search: SavedSearch = {
+    id: randomUUID(),
+    name: input.name.trim().slice(0, 100) || input.queries.join(", ").slice(0, 100),
+    queries: input.queries,
+    country: input.country,
+    place: input.place,
+    skills: input.skills,
+    seen: [],
+    lastRun: null,
+    createdAt: new Date().toISOString(),
+  };
+  writeSetting(SAVED_SEARCHES, [...searches, search]);
+  return search;
+}
+
+export function deleteSavedSearch(id: string): boolean {
+  const searches = listSavedSearches();
+  const kept = searches.filter((search) => search.id !== id);
+  writeSetting(SAVED_SEARCHES, kept);
+  return kept.length < searches.length;
+}
+
+// Marks which results the saved search hasn't shown before (none on its first run, which only records them),
+// and remembers them all for next time.
+export function markNew(id: string, results: FoundJob[]): FoundJob[] {
+  const searches = listSavedSearches();
+  const search = searches.find((item) => item.id === id);
+  if (!search) return results;
+  const seen = new Set(search.seen);
+  const firstRun = search.lastRun === null;
+  const marked = results.map((job) => ({ ...job, isNew: !firstRun && !seen.has(job.id) }));
+  const updated = { ...search, seen: [...new Set([...results.map((job) => job.id), ...search.seen])].slice(0, MAX_SEEN), lastRun: new Date().toISOString() };
+  writeSetting(SAVED_SEARCHES, searches.map((item) => (item.id === id ? updated : item)));
+  return marked;
 }

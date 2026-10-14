@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarClock, CircleAlert, Loader2, Plus, Search, X } from "lucide-react";
+import { BadgeDollarSign, CalendarClock, CircleAlert, Download, Loader2, Plus, Search, X } from "lucide-react";
 import { formatDay, JobStatusBadge, MatchBadge, STATUS_LABELS } from "@/components/job-badges";
+import { OpenToWork } from "@/components/open-to-work";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,6 +35,8 @@ export function JobsBoard() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
+  // The saved job a new one looks like, so you can open it or save the new one anyway.
+  const [duplicateId, setDuplicateId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/jobs")
@@ -51,17 +54,19 @@ export function JobsBoard() {
       .catch(() => {});
   }, []);
 
-  async function add(event: React.FormEvent) {
-    event.preventDefault();
+  async function add(event?: React.FormEvent, allowDuplicate = false) {
+    event?.preventDefault();
     setSaving(true);
     setFormError("");
+    setDuplicateId(null);
     try {
       const response = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, allowDuplicate }),
       });
-      const data = (await response.json()) as { job?: JobRecord; error?: string };
+      const data = (await response.json()) as { job?: JobRecord; error?: string; duplicateId?: string };
+      if (data.duplicateId) setDuplicateId(data.duplicateId);
       if (!response.ok || !data.job) throw new Error(data.error ?? "Couldn't save the job.");
       router.push(`/jobs/${data.job.id}`);
     } catch (err) {
@@ -91,6 +96,8 @@ export function JobsBoard() {
           </AlertDescription>
         </Alert>
       )}
+
+      <NextSteps jobs={jobs ?? []} />
 
       {adding ? (
         <Card>
@@ -143,7 +150,21 @@ export function JobsBoard() {
                   className="max-h-96"
                 />
               </div>
-              {formError && <p className="text-sm text-destructive">{formError}</p>}
+              {formError && (
+                <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-destructive">
+                  {formError}
+                  {duplicateId && (
+                    <>
+                      <Link href={`/jobs/${duplicateId}`} className="text-foreground underline underline-offset-4">
+                        Open it
+                      </Link>
+                      <button type="button" className="text-foreground underline underline-offset-4" onClick={() => void add(undefined, true)}>
+                        Save it again anyway
+                      </button>
+                    </>
+                  )}
+                </p>
+              )}
               <Button type="submit" className="justify-self-start" disabled={saving || !form.title.trim()}>
                 {saving ? <Loader2 className="animate-spin" /> : <Plus />}
                 Save job
@@ -156,7 +177,7 @@ export function JobsBoard() {
       <Card>
         <CardHeader>
           <CardTitle>Your jobs</CardTitle>
-          <CardAction className="flex gap-2">
+          <CardAction className="flex flex-wrap justify-end gap-2">
             <Button asChild size="sm" variant={adding ? "default" : "outline"}>
               <Link href="/jobs/find">
                 <Search />
@@ -232,8 +253,82 @@ export function JobsBoard() {
               ))}
             </ul>
           )}
+          {jobs && jobs.length > 0 && (
+            <div className="flex flex-wrap gap-2 border-t pt-3">
+              <Button asChild size="sm" variant="ghost">
+                <a href="/api/jobs/export" download>
+                  <Download />
+                  Export to CSV
+                </a>
+              </Button>
+              {jobs.some((job) => job.offer || job.status === "offer") && (
+                <Button asChild size="sm" variant="ghost">
+                  <Link href="/jobs/offers">
+                    <BadgeDollarSign />
+                    Compare offers
+                  </Link>
+                </Button>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      <OpenToWork jobs={jobs ?? []} />
     </div>
+  );
+}
+
+const DAY = 86_400_000;
+const FOLLOW_UP_AFTER_DAYS = 7;
+
+function localDay(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+// Next steps due today or overdue, the ones coming up this week, and applications with no answer after a week
+// and no next step set, which might be worth a follow-up email.
+function NextSteps({ jobs }: { jobs: JobRecord[] }) {
+  const today = localDay(new Date());
+  const inAWeek = localDay(new Date(Date.now() + 7 * DAY));
+  const open = jobs.filter((job) => job.status !== "rejected");
+  const due = open.filter((job) => job.followUp && job.followUp <= today).sort((a, b) => a.followUp!.localeCompare(b.followUp!));
+  const soon = open.filter((job) => job.followUp && job.followUp > today && job.followUp <= inAWeek).sort((a, b) => a.followUp!.localeCompare(b.followUp!));
+  const quiet = open.filter((job) => {
+    if (job.status !== "applied" || job.followUp) return false;
+    const applied = job.history.findLast((step) => step.status === "applied")?.at;
+    return applied !== undefined && Date.now() - Date.parse(applied) > FOLLOW_UP_AFTER_DAYS * DAY;
+  });
+  if (due.length + soon.length + quiet.length === 0) return null;
+
+  const row = (job: JobRecord, note: string, urgent = false) => (
+    <li key={`${note}-${job.id}`}>
+      <Link href={`/jobs/${job.id}`} className="-mx-2 flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-muted/60">
+        <span className="grid min-w-0 flex-1">
+          <span className="truncate text-sm font-medium">{job.title}</span>
+          <span className="truncate text-xs text-muted-foreground">{job.company}</span>
+        </span>
+        <span className={cn("shrink-0 text-xs", urgent ? "font-medium text-destructive" : "text-muted-foreground")}>{note}</span>
+      </Link>
+    </li>
+  );
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <CalendarClock className="size-4" /> Next steps
+        </CardTitle>
+        <CardDescription>From the next-step dates on your jobs. Open a job to write a follow-up or thank-you email.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ul className="grid divide-y">
+          {due.map((job) => row(job, job.followUp === today ? "Due today" : `Overdue since ${formatDay(job.followUp!)}`, true))}
+          {soon.map((job) => row(job, formatDay(job.followUp!)))}
+          {quiet.map((job) => row(job, `No reply after ${FOLLOW_UP_AFTER_DAYS}+ days: follow up?`))}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }

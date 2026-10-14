@@ -64,3 +64,26 @@ export const SOURCE_SITES: Record<SourceName, string> = {
   Jobicy: "https://jobicy.com",
   Adzuna: "https://www.adzuna.com",
 };
+
+export const MAX_QUERIES = 3;
+export const MAX_SKILLS = 30;
+
+export type SearchInput = { queries: string[]; country: string; place: string; skills: string[] };
+
+// Checks a search from a request body: 1 to 3 queries, a known country (or "" for anywhere), a place and skills.
+export function parseSearchInput(body: Record<string, unknown>): SearchInput | string {
+  const queries = (Array.isArray(body.queries) ? body.queries : [])
+    .map((query) => (typeof query === "string" ? query.trim() : ""))
+    .filter(Boolean);
+  if (queries.length === 0) return "Add a job title or keywords to search for.";
+  if (queries.length > MAX_QUERIES || queries.some((query) => query.length > 100)) {
+    return `Search for at most ${MAX_QUERIES} things at once, each under 100 characters.`;
+  }
+  const country = typeof body.country === "string" ? body.country : "";
+  if (country && !findCountry(country)) return "Unknown country.";
+  const place = typeof body.place === "string" ? body.place.trim().slice(0, 100) : "";
+  const skills = (Array.isArray(body.skills) ? body.skills : [])
+    .filter((skill): skill is string => typeof skill === "string" && skill.trim().length > 0 && skill.length <= 60)
+    .slice(0, MAX_SKILLS);
+  return { queries, country, place, skills };
+}

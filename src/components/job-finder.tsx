@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Check, ChevronDown, CircleAlert, ExternalLink, Loader2, Plus, Search, Sparkles } from "lucide-react";
+import { Bookmark, Check, ChevronDown, CircleAlert, ExternalLink, Loader2, Plus, Search, Sparkles, X } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { JobRecord } from "@/lib/db.ts";
@@ -16,7 +16,8 @@ import { useSavedState } from "@/lib/use-saved-state.ts";
 import { cn } from "@/lib/utils";
 
 type Search = { queries: string[]; country: string; place: string; skills: string[] };
-type Saved = Search & { results: FoundJob[] | null; sources: SourceResult[]; searchedAt: string | null };
+type Saved = Search & { results: FoundJob[] | null; sources: SourceResult[]; searchedAt: string | null; savedSearchId?: string | null };
+type SavedSearch = Search & { id: string; name: string; lastRun: string | null; seenCount: number };
 type Suggestion = { searches: string[]; skills: string[]; country: string; fromModel: boolean; adzuna: boolean; profileEmpty: boolean };
 
 const EMPTY_SEARCH: Search = { queries: ["", "", ""], country: "", place: "", skills: [] };
@@ -35,16 +36,21 @@ export function JobFinder() {
   const [saving, setSaving] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [restored, setRestored] = useState(false);
+  // The saved search the form came from, so running it marks the jobs that are new since last time.
+  const [savedSearchId, setSavedSearchId] = useState<string | null>(null);
+  const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
+  const [onlyNew, setOnlyNew] = useState(false);
 
   // The last search and its results stay until you search again.
   const loaded = useSavedState<Saved>(
     "jobsearch",
-    { ...search, results, sources, searchedAt },
+    { ...search, results, sources, searchedAt, savedSearchId },
     (saved) => {
       setSearch({ queries: [...saved.queries, "", "", ""].slice(0, 3), country: saved.country, place: saved.place, skills: saved.skills ?? [] });
       setResults(saved.results);
       setSources(saved.sources ?? []);
       setSearchedAt(saved.searchedAt);
+      setSavedSearchId(saved.savedSearchId ?? null);
       setRestored(true);
     },
   );
@@ -85,7 +91,15 @@ export function JobFinder() {
     }
   }
 
-  async function run(event?: React.FormEvent) {
+  function loadSavedSearches() {
+    fetch("/api/jobs/searches")
+      .then((response) => response.json() as Promise<{ searches: SavedSearch[] }>)
+      .then(({ searches }) => setSavedSearches(searches))
+      .catch(() => {});
+  }
+  useEffect(loadSavedSearches, []);
+
+  async function run(event?: React.FormEvent, from: Search = search, fromId: string | null = savedSearchId) {
     event?.preventDefault();
     setSearching(true);
     setError("");
@@ -93,7 +107,13 @@ export function JobFinder() {
       const response = await fetch("/api/jobs/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ queries: search.queries.filter((query) => query.trim()), country: search.country, place: search.place, skills: search.skills }),
+        body: JSON.stringify({
+          queries: from.queries.filter((query) => query.trim()),
+          country: from.country,
+          place: from.place,
+          skills: from.skills,
+          savedSearchId: fromId ?? undefined,
+        }),
       });
       const data = (await response.json()) as { results?: FoundJob[]; sources?: SourceResult[]; error?: string };
       if (data.sources) setSources(data.sources);
@@ -101,6 +121,8 @@ export function JobFinder() {
       setResults(data.results);
       setSearchedAt(new Date().toISOString());
       setOpen(null);
+      setOnlyNew(false);
+      if (fromId) loadSavedSearches();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -123,9 +145,11 @@ export function JobFinder() {
           notes: `Found on ${job.source}${job.salary ? `. Salary listed: ${job.salary}` : ""}.`,
         }),
       });
-      const data = (await response.json()) as { job?: JobRecord; error?: string };
-      if (!response.ok || !data.job) throw new Error(data.error ?? "Couldn't save the job.");
-      setSavedJobs((current) => new Map(current).set(job.url, data.job!.id));
+      const data = (await response.json()) as { job?: JobRecord; error?: string; duplicateId?: string };
+      // Already in your list (saved from another board, say): show it as saved.
+      const id = data.job?.id ?? data.duplicateId;
+      if (!id) throw new Error(data.error ?? "Couldn't save the job.");
+      setSavedJobs((current) => new Map(current).set(job.url, id));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -133,9 +157,46 @@ export function JobFinder() {
     }
   }
 
+  // Running a saved search again: fill in the form and search, marking what's new.
+  function runSaved(saved: SavedSearch) {
+    const from = { queries: [...saved.queries, "", "", ""].slice(0, 3), country: saved.country, place: saved.place, skills: saved.skills };
+    setSearch(from);
+    setSavedSearchId(saved.id);
+    void run(undefined, from, saved.id);
+  }
+
+  async function saveSearch() {
+    setError("");
+    try {
+      const response = await fetch("/api/jobs/searches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ queries: queries, country: search.country, place: search.place, skills: search.skills }),
+      });
+      const data = (await response.json()) as { search?: SavedSearch; error?: string };
+      if (!response.ok || !data.search) throw new Error(data.error ?? "Couldn't save the search.");
+      setSavedSearchId(data.search.id);
+      loadSavedSearches();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function deleteSearch(id: string) {
+    await fetch(`/api/jobs/searches/${id}`, { method: "DELETE" }).catch(() => {});
+    if (savedSearchId === id) setSavedSearchId(null);
+    loadSavedSearches();
+  }
+
+  // Editing the form makes it a new search, not the saved one.
+  const edit = (change: (current: Search) => Search) => {
+    setSearch(change);
+    setSavedSearchId(null);
+  };
   const setQuery = (i: number, value: string) =>
-    setSearch((current) => ({ ...current, queries: current.queries.map((query, j) => (j === i ? value : query)) }));
+    edit((current) => ({ ...current, queries: current.queries.map((query, j) => (j === i ? value : query)) }));
   const queries = search.queries.map((query) => query.trim()).filter(Boolean);
+  const newCount = (results ?? []).filter((job) => job.isNew).length;
 
   return (
     <div className="grid gap-6">
@@ -163,6 +224,35 @@ export function JobFinder() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {savedSearches.length > 0 && (
+            <div className="mb-4 grid gap-2">
+              <p className="text-sm font-medium">Saved searches</p>
+              <ul className="flex flex-wrap gap-2">
+                {savedSearches.map((saved) => (
+                  <li key={saved.id} className={cn("flex items-center rounded-md border text-sm", saved.id === savedSearchId && "border-ring bg-muted")}>
+                    <button
+                      type="button"
+                      className="px-2.5 py-1 hover:underline"
+                      title={saved.lastRun ? `Last run ${new Date(saved.lastRun).toLocaleDateString("en", { month: "short", day: "numeric" })}` : "Not run yet"}
+                      disabled={searching}
+                      onClick={() => runSaved(saved)}
+                    >
+                      {saved.name}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Delete saved search ${saved.name}`}
+                      className="border-l px-1.5 py-1 text-muted-foreground hover:text-foreground"
+                      onClick={() => void deleteSearch(saved.id)}
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-muted-foreground">Run one again to see which jobs are new since last time.</p>
+            </div>
+          )}
           <form onSubmit={run} className="grid gap-4">
             <div className="grid gap-2">
               <div className="flex items-center justify-between gap-2">
@@ -192,7 +282,7 @@ export function JobFinder() {
                 <select
                   id="country"
                   value={search.country}
-                  onChange={(event) => setSearch((current) => ({ ...current, country: event.target.value }))}
+                  onChange={(event) => edit((current) => ({ ...current, country: event.target.value }))}
                   className="h-8 w-full rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
                 >
                   <option value="">Anywhere (remote jobs)</option>
@@ -210,7 +300,7 @@ export function JobFinder() {
                   maxLength={100}
                   value={search.place}
                   placeholder="Sydney"
-                  onChange={(event) => setSearch((current) => ({ ...current, place: event.target.value }))}
+                  onChange={(event) => edit((current) => ({ ...current, place: event.target.value }))}
                 />
               </div>
             </div>
@@ -219,10 +309,22 @@ export function JobFinder() {
                 Ranked by these skills from your profile: {search.skills.join(", ")}
               </p>
             )}
-            <Button type="submit" className="justify-self-start" disabled={searching || queries.length === 0}>
-              {searching ? <Loader2 className="animate-spin" /> : <Search />}
-              {searching ? "Searching…" : "Find jobs"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="submit" disabled={searching || queries.length === 0}>
+                {searching ? <Loader2 className="animate-spin" /> : <Search />}
+                {searching ? "Searching…" : "Find jobs"}
+              </Button>
+              {savedSearchId ? (
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <Bookmark className="size-3.5" /> Saved search
+                </span>
+              ) : (
+                <Button type="button" variant="outline" disabled={queries.length === 0} onClick={() => void saveSearch()}>
+                  <Bookmark />
+                  Save this search
+                </Button>
+              )}
+            </div>
           </form>
         </CardContent>
       </Card>
@@ -260,13 +362,20 @@ export function JobFinder() {
         <Card>
           <CardHeader>
             <CardTitle>
-              {results ? `${results.length} job${results.length === 1 ? "" : "s"} found` : "Results"}
+              {results ? `${results.length} job${results.length === 1 ? "" : "s"} found${newCount ? `, ${newCount} new` : ""}` : "Results"}
             </CardTitle>
             <CardDescription>
               Best matches for your profile first. Save the ones you like to check the fit and write a cover letter.
               {searchedAt && ` Searched ${new Date(searchedAt).toLocaleString("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.`}
             </CardDescription>
           </CardHeader>
+          {newCount > 0 && (
+            <CardAction>
+              <Button size="sm" variant={onlyNew ? "default" : "outline"} onClick={() => setOnlyNew((value) => !value)}>
+                {onlyNew ? "Show all" : `Only new (${newCount})`}
+              </Button>
+            </CardAction>
+          )}
           <CardContent className="grid gap-3">
             {sources.length > 0 && (
               <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -295,7 +404,7 @@ export function JobFinder() {
             )}
             {results && results.length > 0 && (
               <ul className="grid divide-y">
-                {results.map((job) => {
+                {results.filter((job) => !onlyNew || job.isNew).map((job) => {
                   const savedId = savedJobs.get(job.url);
                   const expanded = open === job.id;
                   return (
@@ -333,6 +442,7 @@ export function JobFinder() {
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5">
+                        {job.isNew && <Badge>New</Badge>}
                         {job.matched.map((term) => (
                           <Badge key={term} variant="secondary">
                             {term}

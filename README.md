@@ -109,16 +109,23 @@ To use your own ComfyUI workflow instead of the built-in one, export it with **E
 - [Himalayas](https://himalayas.app) and [Jobicy](https://jobicy.com): remote jobs, no setup.
 - [Adzuna](https://www.adzuna.com): jobs in Australia, the UK, the US and 16 other countries. Optional: get a free key at [developer.adzuna.com](https://developer.adzuna.com) and set `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`.
 
-Results are ranked by how many of your skills and titles they mention, and **Save to my jobs** adds one to your list with its description. The same searches are linked on LinkedIn, Seek and Indeed for you to open; LinkedIn has no job search API for personal apps, and Draftfox doesn't scrape any site. Only the search words and country are sent to the job boards.
+Results are ranked by how many of your skills and titles they mention, and **Save to my jobs** adds one to your list with its description. **Save this search** keeps it: run it again later and the jobs that are new since last time are marked. The same searches are linked on LinkedIn, Seek and Indeed for you to open; LinkedIn has no job search API for personal apps, and Draftfox doesn't scrape any site. Only the search words and country are sent to the job boards.
 
 You can also add a job by hand: paste the title, company, link and description. On a job's page:
 
 - **Fit with your profile** lists what the job asks for that your profile shows (with where it's shown) and what your profile doesn't show.
 - **Cover letter** is written from what matches. Requirements your profile doesn't show are left out of the letter and listed for you, so you decide what to say. Edit it on the page and copy it.
 - **Application questions**: paste the form's questions, one per line. Answers use only your profile; questions it can't answer (salary, notice period, a skill you haven't listed) are left blank with a note.
+- **Keywords from the job**: the tools and skills it names, split into the ones your profile mentions and the ones it doesn't, so you can add the ones that are true.
+- **CV for this job**: your CV reordered and reworded for the job, with nothing new added. Edit it, then download it as a Word .docx (the cover letter downloads too).
+- **Interview prep**: questions the job is likely to bring up, answers from your experience, and what to prepare yourself.
+- **Follow-up email**: a follow-up after applying or a thank-you after an interview. Copy it or open it in your email app; Draftfox never sends email.
+- **Contacts** (name, role, email, LinkedIn link) and **offer details** (salary, leave, benefits and so on). **Compare offers** shows offers side by side.
 - **Status** (saved, applied, interview, offer, rejected) with the date of each change, a next-step date and notes.
 
 Everything is written from the Profile page, so fill it in, import your LinkedIn data, or paste or import your CV (.docx or .txt) there first. Numbers or names in a draft that aren't in your profile are flagged for you to check. **Open the job to apply** opens the posting in your browser; Draftfox never applies for you.
+
+On the Jobs page, **Next steps** lists jobs whose next-step date is today or past, the ones coming up this week, and applications with no answer after a week. **Export to CSV** downloads your list for Excel or Google Sheets, and saving the same job twice (same link, or same title and company) asks first. **Write an "open to work" post** drafts a LinkedIn post from your profile and saves it on the Posts page; nothing is posted until you choose to. The Reports page shows applications per week, replies, interviews and offers.
 
 ## Reports and LinkedIn analytics
 

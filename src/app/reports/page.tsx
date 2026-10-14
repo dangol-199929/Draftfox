@@ -181,6 +181,40 @@ export default async function ReportsPage({
         </CardContent>
       </Card>
 
+      {report.jobs && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Job search</CardTitle>
+            <CardDescription>
+              From the jobs you track on the{" "}
+              <Link href="/jobs" className="underline underline-offset-2 hover:text-foreground">
+                Jobs
+              </Link>{" "}
+              page and the dates you changed their status.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-6">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <Stat label="Applied" value={report.jobs.applied} />
+              <Stat
+                label="Replies"
+                value={report.jobs.replied}
+                note={report.jobs.applied ? `${Math.round((report.jobs.replied / report.jobs.applied) * 100)}% of applications` : undefined}
+              />
+              <Stat label="Interviews" value={report.jobs.interviews} />
+              <Stat label="Offers" value={report.jobs.offers} note={report.jobs.rejected ? `${report.jobs.rejected} rejected` : undefined} />
+            </div>
+            <div className="grid gap-6 md:grid-cols-[2fr_1fr]">
+              <div className="grid gap-2">
+                <p className="text-sm font-medium">Applications per week (last 12 weeks)</p>
+                <MonthBars months={report.jobs.weeks} unit="application" />
+              </div>
+              <Breakdown title="Where your jobs are now" rows={report.jobs.stages} />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {report.history && (
         <Card>
           <CardHeader>
@@ -262,7 +296,7 @@ function Breakdown({ title, rows }: { title: string; rows: { label: string; coun
   );
 }
 
-function MonthBars({ months }: { months: { month: string; label: string; count: number }[] }) {
+function MonthBars({ months, unit = "post" }: { months: { month: string; label: string; count: number }[]; unit?: string }) {
   const max = Math.max(1, ...months.map((month) => month.count));
   const labelEvery = Math.ceil(months.length / 6);
   return (
@@ -272,7 +306,7 @@ function MonthBars({ months }: { months: { month: string; label: string; count: 
           <div
             key={month.month}
             className="group relative flex h-full flex-1 items-end justify-center"
-            title={`${month.label}: ${month.count} post${month.count === 1 ? "" : "s"}`}
+            title={`${month.label}: ${month.count} ${unit}${month.count === 1 ? "" : "s"}`}
           >
             {month.count > 0 && (
               <span

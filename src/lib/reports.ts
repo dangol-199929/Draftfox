@@ -1,6 +1,6 @@
 // Server-only: turns the app's own records (generations and the activity log in data/app.db) into the Reports page.
 // Nothing here calls LinkedIn; see LINKEDIN_INSIGHTS for what LinkedIn would need to allow before it could.
-import { listEvents, listGenerations, type EventRow, type GenerationRow } from "./db.ts";
+import { listEvents, listGenerations, listJobs, type EventRow, type GenerationRow, type JobRecord } from "./db.ts";
 import { readProfile } from "./profile.ts";
 import type { PostInput } from "./prompts.ts";
 
@@ -47,6 +47,7 @@ export type Report = {
   posts: PublishedPost[];
   activity: ActivityItem[];
   history: { months: { month: string; label: string; count: number }[]; total: number; importedAt: string } | null;
+  jobs: JobReport | null;
   empty: boolean;
 };
 
@@ -137,6 +138,7 @@ export async function buildReport(range: Range, now = new Date()): Promise<Repor
     posts,
     activity,
     history: await importedHistory(),
+    jobs: jobReport(listJobs(), inRange, now),
     empty: current.length === 0 && currentEvents.length === 0,
   };
 }
@@ -258,4 +260,54 @@ async function importedHistory(): Promise<Report["history"]> {
     }
   }
   return { months: all.slice(-24), total: profile.posts.length, importedAt: profile.importedAt };
+}
+
+// --- Job search (the Jobs page tracker) ---
+
+export type JobReport = {
+  applied: number;
+  // Of the jobs applied for in the range, how many got any answer: an interview, an offer or a rejection.
+  replied: number;
+  interviews: number;
+  offers: number;
+  rejected: number;
+  weeks: { month: string; label: string; count: number }[];
+  stages: { label: string; count: number }[];
+};
+
+const WEEKS = 12;
+
+// Counts from each job's status history (the date of each change), so moving a job back and forth still counts
+// when it happened. Null when no jobs are tracked.
+function jobReport(jobs: JobRecord[], inRange: (iso: string) => boolean, now: Date): JobReport | null {
+  if (jobs.length === 0) return null;
+  const when = (job: JobRecord, status: string) => job.history.find((step) => step.status === status)?.at ?? null;
+  const appliedJobs = jobs.filter((job) => {
+    const at = when(job, "applied");
+    return at !== null && inRange(at);
+  });
+  const reached = (status: string) => jobs.filter((job) => job.history.some((step) => step.status === status && inRange(step.at))).length;
+  const replied = appliedJobs.filter((job) => {
+    const applied = when(job, "applied")!;
+    return job.history.some((step) => ["interview", "offer", "rejected"].includes(step.status) && step.at > applied);
+  }).length;
+
+  // Applications per week (weeks start on Monday) for the last 12 weeks.
+  const monday = startOfDay(now);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const weeks = Array.from({ length: WEEKS }, (_, i) => {
+    const start = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() - (WEEKS - 1 - i) * 7);
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7);
+    const count = jobs.filter((job) => {
+      const at = when(job, "applied");
+      return at !== null && at >= start.toISOString() && at < end.toISOString();
+    }).length;
+    return { month: start.toISOString(), label: start.toLocaleDateString("en", { month: "short", day: "numeric" }), count };
+  });
+
+  const stages = ["saved", "applied", "interview", "offer", "rejected"].map((status) => ({
+    label: status[0].toUpperCase() + status.slice(1),
+    count: jobs.filter((job) => job.status === status).length,
+  }));
+  return { applied: appliedJobs.length, replied, interviews: reached("interview"), offers: reached("offer"), rejected: reached("rejected"), weeks, stages };
 }

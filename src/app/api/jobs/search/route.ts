@@ -1,6 +1,6 @@
 import { badRequest, readJsonObject } from "@/lib/api.ts";
-import { COUNTRIES, countryFromLocation } from "@/lib/job-links.ts";
-import { adzunaConfigured, MAX_QUERIES, MAX_SKILLS, searchJobs, suggestSearches } from "@/lib/job-search.ts";
+import { countryFromLocation, parseSearchInput } from "@/lib/job-links.ts";
+import { adzunaConfigured, markNew, searchJobs, suggestSearches } from "@/lib/job-search.ts";
 import { hasProfileContent, profileText } from "@/lib/jobs.ts";
 import { readProfile } from "@/lib/profile.ts";
 
@@ -16,28 +16,19 @@ export async function GET() {
   return Response.json({ searches, skills, country: countryFromLocation(profile.location), fromModel, adzuna: adzunaConfigured(), profileEmpty: false });
 }
 
-// Body: { queries: string[] (1 to 3), country (a code from COUNTRIES, or "" for anywhere), place?, skills? (to rank by) }.
-// Returns { results, sources }: postings ranked by how well they match your profile, and how each job board did.
+// Body: { queries: string[] (1 to 3), country (a code from COUNTRIES, or "" for anywhere), place?, skills? (to rank
+// by), savedSearchId? }. Returns { results, sources }: postings ranked by how well they match your profile, and how
+// each job board did. With savedSearchId, results that search hasn't shown before are marked isNew.
 export async function POST(request: Request) {
   const body = await readJsonObject(request);
   if (!body) return badRequest("Request body must be a JSON object.");
-  const queries = (Array.isArray(body.queries) ? body.queries : [])
-    .map((query) => (typeof query === "string" ? query.trim() : ""))
-    .filter(Boolean);
-  if (queries.length === 0) return badRequest("Add a job title or keywords to search for.");
-  if (queries.length > MAX_QUERIES || queries.some((query) => query.length > 100)) {
-    return badRequest(`Search for at most ${MAX_QUERIES} things at once, each under 100 characters.`);
-  }
-  const country = typeof body.country === "string" ? body.country : "";
-  if (country && !COUNTRIES.some((item) => item.code === country)) return badRequest("Unknown country.");
-  const place = typeof body.place === "string" ? body.place.slice(0, 100) : "";
-  const skills = (Array.isArray(body.skills) ? body.skills : [])
-    .filter((skill): skill is string => typeof skill === "string" && skill.trim().length > 0 && skill.length <= 60)
-    .slice(0, MAX_SKILLS);
+  const input = parseSearchInput(body);
+  if (typeof input === "string") return badRequest(input);
 
-  const { results, sources } = await searchJobs({ queries, country, place, skills }, await readProfile());
+  const { results, sources } = await searchJobs(input, await readProfile());
   if (results.length === 0 && sources.every((source) => source.error || source.skipped)) {
     return Response.json({ error: "Couldn't reach the job boards. Check your internet connection and try again.", sources }, { status: 503 });
   }
-  return Response.json({ results, sources });
+  const savedSearchId = typeof body.savedSearchId === "string" ? body.savedSearchId : "";
+  return Response.json({ results: savedSearchId ? markNew(savedSearchId, results) : results, sources });
 }
