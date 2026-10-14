@@ -2,10 +2,12 @@
 // Holds what you're working on (form contents and unsaved edits) so it survives page switches and reloads,
 // and every generated post, so a post finished while you were on another page isn't lost.
 // Also an activity log (posts published, drafts copied, LinkedIn connected...) that the Reports page reads,
-// the posts you edit, schedule or publish from the Posts page, their images (files in data/images), and settings.
+// the posts you edit, schedule or publish from the Posts page, their images (files in data/images), settings,
+// and the jobs you track on the Jobs page.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { isJobStatus, type JobStatus } from "./job-status.ts";
 
 const DATA_DIR = join(process.cwd(), "data");
 const DB_FILE = join(DATA_DIR, "app.db");
@@ -71,6 +73,23 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    company TEXT NOT NULL,
+    location TEXT NOT NULL,
+    url TEXT NOT NULL,
+    description TEXT NOT NULL,
+    status TEXT NOT NULL,
+    notes TEXT NOT NULL,
+    follow_up TEXT,
+    history TEXT NOT NULL,
+    fit TEXT,
+    letter TEXT,
+    answers TEXT NOT NULL,
+    created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
 `;
@@ -166,6 +185,8 @@ export const EVENT_TYPES = [
   "profile_imported",
   "prompt_saved",
   "prompt_reset",
+  "job_added",
+  "job_status_changed",
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -398,4 +419,162 @@ export function writeSetting(key: string, value: unknown): void {
        ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
     )
     .run(key, JSON.stringify(value), new Date().toISOString());
+}
+
+// --- Jobs (the Jobs page tracker) ---
+
+export { JOB_STATUSES, isJobStatus, type JobStatus } from "./job-status.ts";
+
+// What the model wrote about how the job fits the profile. Each strength says where in the profile it comes from.
+export type JobFit = {
+  match: "strong" | "partial" | "weak";
+  summary: string;
+  strengths: { point: string; evidence: string }[];
+  gaps: string[];
+  // Numbers in the reply found in neither the profile nor the job, so they may be made up.
+  unverified: string[];
+  at: string;
+};
+
+export type JobLetter = { text: string; gaps: string[]; unverified: string[]; at: string };
+
+export type JobAnswer = { question: string; answer: string; gap: string; unverified: string[] };
+
+export type JobRecord = {
+  id: string;
+  title: string;
+  company: string;
+  location: string;
+  url: string;
+  description: string;
+  status: JobStatus;
+  notes: string;
+  // A date (YYYY-MM-DD) for the next step, such as an interview or when to follow up.
+  followUp: string | null;
+  // Every status the job has had, oldest first.
+  history: { status: JobStatus; at: string }[];
+  fit: JobFit | null;
+  letter: JobLetter | null;
+  answers: JobAnswer[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+type JobRow = {
+  id: string;
+  title: string;
+  company: string;
+  location: string;
+  url: string;
+  description: string;
+  status: string;
+  notes: string;
+  follow_up: string | null;
+  history: string;
+  fit: string | null;
+  letter: string | null;
+  answers: string;
+  created_at: string;
+  updated_at: string;
+};
+
+function parseJson<T>(text: string | null, fallback: T): T {
+  if (text === null) return fallback;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function toJob(row: JobRow): JobRecord {
+  return {
+    id: row.id,
+    title: row.title,
+    company: row.company,
+    location: row.location,
+    url: row.url,
+    description: row.description,
+    status: isJobStatus(row.status) ? row.status : "saved",
+    notes: row.notes,
+    followUp: row.follow_up,
+    history: parseJson(row.history, []),
+    fit: parseJson(row.fit, null),
+    letter: parseJson(row.letter, null),
+    answers: parseJson(row.answers, []),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function insertJob(job: JobRecord): void {
+  db()
+    .prepare(
+      `INSERT INTO jobs (id, title, company, location, url, description, status, notes, follow_up, history, fit, letter,
+         answers, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      job.id,
+      job.title,
+      job.company,
+      job.location,
+      job.url,
+      job.description,
+      job.status,
+      job.notes,
+      job.followUp,
+      JSON.stringify(job.history),
+      job.fit && JSON.stringify(job.fit),
+      job.letter && JSON.stringify(job.letter),
+      JSON.stringify(job.answers),
+      job.createdAt,
+      job.updatedAt,
+    );
+}
+
+export function getJob(id: string): JobRecord | null {
+  const row = db().prepare("SELECT * FROM jobs WHERE id = ?").get(id) as JobRow | undefined;
+  return row ? toJob(row) : null;
+}
+
+export function listJobs(): JobRecord[] {
+  return (db().prepare("SELECT * FROM jobs ORDER BY updated_at DESC").all() as JobRow[]).map(toJob);
+}
+
+const JOB_COLUMNS: Record<string, string> = {
+  title: "title",
+  company: "company",
+  location: "location",
+  url: "url",
+  description: "description",
+  status: "status",
+  notes: "notes",
+  followUp: "follow_up",
+  history: "history",
+  fit: "fit",
+  letter: "letter",
+  answers: "answers",
+};
+const JSON_JOB_FIELDS = ["history", "fit", "letter", "answers"];
+
+export type JobChanges = Partial<Omit<JobRecord, "id" | "createdAt" | "updatedAt">>;
+
+// Updates the given fields. Returns whether the job exists.
+export function updateJob(id: string, changes: JobChanges): boolean {
+  const sets: string[] = [];
+  const values: (string | null)[] = [];
+  for (const [field, value] of Object.entries(changes)) {
+    const column = JOB_COLUMNS[field];
+    if (!column || value === undefined) continue;
+    sets.push(`${column} = ?`);
+    values.push(JSON_JOB_FIELDS.includes(field) && value !== null ? JSON.stringify(value) : (value as string | null));
+  }
+  sets.push("updated_at = ?");
+  values.push(new Date().toISOString(), id);
+  return Number(db().prepare(`UPDATE jobs SET ${sets.join(", ")} WHERE id = ?`).run(...values).changes) > 0;
+}
+
+export function deleteJobRecord(id: string): void {
+  db().prepare("DELETE FROM jobs WHERE id = ?").run(id);
 }

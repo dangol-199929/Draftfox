@@ -13,6 +13,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "test:jobs": "node --env-file-if-exists=.env scripts/test-jobs.ts",
     "test:posts": "node --env-file-if-exists=.env scripts/test-posts.ts"
   },
   "devDependencies": {

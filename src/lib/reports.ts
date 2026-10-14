@@ -225,6 +225,10 @@ function eventText(event: EventRow): string {
       return "Changed the prompt";
     case "prompt_reset":
       return "Reset the prompt to the default";
+    case "job_added":
+      return "Added a job to track";
+    case "job_status_changed":
+      return typeof event.data.status === "string" ? `Moved a job to ${event.data.status}` : "Updated a job";
   }
 }
 
