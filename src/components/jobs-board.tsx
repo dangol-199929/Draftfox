@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarClock, CircleAlert, Loader2, Plus, X } from "lucide-react";
+import { CalendarClock, CircleAlert, Loader2, Plus, Search, X } from "lucide-react";
 import { formatDay, JobStatusBadge, MatchBadge, STATUS_LABELS } from "@/components/job-badges";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -46,7 +46,7 @@ export function JobsBoard() {
     fetch("/api/profile")
       .then((response) => response.json() as Promise<{ profile: Profile; exists: boolean }>)
       .then(({ profile, exists }) =>
-        setProfileEmpty(!exists || (!profile.headline && !profile.summary && !profile.facts && profile.positions.length === 0 && profile.skills.length === 0)),
+        setProfileEmpty(!exists || (!profile.headline && !profile.summary && !profile.facts && !profile.cv && profile.positions.length === 0 && profile.skills.length === 0)),
       )
       .catch(() => {});
   }, []);
@@ -96,7 +96,13 @@ export function JobsBoard() {
         <Card>
           <CardHeader>
             <CardTitle>Add a job</CardTitle>
-            <CardDescription>Paste the details of a job you found. Nothing is fetched from job sites.</CardDescription>
+            <CardDescription>
+              Paste the details of a job you found, or{" "}
+              <Link href="/jobs/find" className="text-foreground underline underline-offset-4">
+                find jobs that match your profile
+              </Link>
+              .
+            </CardDescription>
             {jobs && jobs.length > 0 && (
               <CardAction>
                 <Button size="icon-sm" variant="ghost" aria-label="Close" onClick={() => setAdding(false)}>
@@ -150,14 +156,20 @@ export function JobsBoard() {
       <Card>
         <CardHeader>
           <CardTitle>Your jobs</CardTitle>
-          {!adding && (
-            <CardAction>
+          <CardAction className="flex gap-2">
+            <Button asChild size="sm" variant={adding ? "default" : "outline"}>
+              <Link href="/jobs/find">
+                <Search />
+                Find jobs
+              </Link>
+            </Button>
+            {!adding && (
               <Button size="sm" onClick={() => setAdding(true)}>
                 <Plus />
                 Add a job
               </Button>
-            </CardAction>
-          )}
+            )}
+          </CardAction>
         </CardHeader>
         <CardContent className="grid gap-3">
           <div className="flex flex-wrap gap-1" role="tablist" aria-label="Show">

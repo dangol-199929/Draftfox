@@ -35,7 +35,7 @@ Then open http://localhost:3000.
 - **Prompt** (`/prompt`): edit the system prompt, the standing rules the model follows for every post. Save, discard changes, or reset to the built-in default.
 - **LinkedIn** (`/linkedin`): connect your LinkedIn account with Sign In with LinkedIn, and optionally enable posting. See below.
 - **Reports** (`/reports`): drafts generated, copied and posted over the last 7, 30 or 90 days or all time, with a chart, the lengths and tones you use, recent activity and links to the posts you published. See below.
-- **Jobs** (`/jobs`): paste a job you found, see how it fits your profile, and draft a cover letter and answers to application questions. See below.
+- **Jobs** (`/jobs`): find jobs that match your profile or paste one you found, see how it fits, and draft a cover letter and answers to application questions. See below.
 
 ## Profile and LinkedIn data import (optional)
 
@@ -104,14 +104,21 @@ To use your own ComfyUI workflow instead of the built-in one, export it with **E
 
 ## Jobs
 
-Paste a job you found (title, company, link and the description); nothing is fetched from job sites. On the job's page:
+**Find jobs** (`/jobs/find`) suggests job titles from your profile and searches job boards through their public APIs:
+
+- [Himalayas](https://himalayas.app) and [Jobicy](https://jobicy.com): remote jobs, no setup.
+- [Adzuna](https://www.adzuna.com): jobs in Australia, the UK, the US and 16 other countries. Optional: get a free key at [developer.adzuna.com](https://developer.adzuna.com) and set `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`.
+
+Results are ranked by how many of your skills and titles they mention, and **Save to my jobs** adds one to your list with its description. The same searches are linked on LinkedIn, Seek and Indeed for you to open; LinkedIn has no job search API for personal apps, and Draftfox doesn't scrape any site. Only the search words and country are sent to the job boards.
+
+You can also add a job by hand: paste the title, company, link and description. On a job's page:
 
 - **Fit with your profile** lists what the job asks for that your profile shows (with where it's shown) and what your profile doesn't show.
 - **Cover letter** is written from what matches. Requirements your profile doesn't show are left out of the letter and listed for you, so you decide what to say. Edit it on the page and copy it.
 - **Application questions**: paste the form's questions, one per line. Answers use only your profile; questions it can't answer (salary, notice period, a skill you haven't listed) are left blank with a note.
 - **Status** (saved, applied, interview, offer, rejected) with the date of each change, a next-step date and notes.
 
-Everything is written from the Profile page, so fill it in or import your LinkedIn data first. Numbers or names in a draft that aren't in your profile are flagged for you to check. **Open the job to apply** opens the posting in your browser; Draftfox never applies for you.
+Everything is written from the Profile page, so fill it in, import your LinkedIn data, or paste or import your CV (.docx or .txt) there first. Numbers or names in a draft that aren't in your profile are flagged for you to check. **Open the job to apply** opens the posting in your browser; Draftfox never applies for you.
 
 ## Reports and LinkedIn analytics
 
@@ -137,6 +144,7 @@ Copy `.env.example` to `.env` and fill in what you need. Everything is optional.
 | `LINKEDIN_CLIENT_ID` | none | Client ID of your LinkedIn app |
 | `LINKEDIN_CLIENT_SECRET` | none | Primary Client Secret of your LinkedIn app. Keep it secret. |
 | `LINKEDIN_REDIRECT_URI` | `http://localhost:3000/api/linkedin/callback` | Must match the redirect URL in your LinkedIn app |
+| `ADZUNA_APP_ID`, `ADZUNA_APP_KEY` | none | Free Adzuna API key, so Find jobs also searches local (not only remote) jobs |
 | `LINKEDIN_API_BASE` | `https://api.linkedin.com` | Only for tests: points posting at a fake LinkedIn server |
 
 `.env` is gitignored.
@@ -157,7 +165,7 @@ Copy `.env.example` to `.env` and fill in what you need. Everything is optional.
 Everything stays on your computer in the `data/` folder, which is gitignored:
 
 - `data/settings.json`: your edited system prompt, if you changed it.
-- `data/profile.json`: your profile facts and past posts, if you added them. "Delete all profile data" removes it.
+- `data/profile.json`: your profile facts, CV text and past posts, if you added them. "Delete all profile data" removes it.
 - `data/linkedin.json`: your LinkedIn name, email, photo URL and access token, if you connected. Disconnecting deletes it.
 - `data/app.db`: a small SQLite database (Node's built-in `node:sqlite`, nothing to install) that keeps what you're working on: the Generate form and current draft, unsaved edits on the Prompt and Profile pages, each generated post, and the jobs you track on the Jobs page. Generation runs on the server, so it keeps going if you switch pages or reload. They come back when you switch pages or reload. "Start over" on Generate clears the draft; Save or Discard changes clears the unsaved edits.
 
@@ -165,7 +173,7 @@ Comparison runs from `pnpm test:posts` go to `outputs/`, also gitignored.
 
 ## Privacy
 
-Draftfox runs on your computer and has no server of its own. Your profile, drafts, images, settings and your LinkedIn access token stay in the `data/` folder on your machine; nothing is sent to the project or anyone else. Text and images are made by local models (Ollama, mflux or ComfyUI). The only thing that leaves your computer is what you publish to LinkedIn, through your own LinkedIn developer app, plus the one-time model downloads.
+Draftfox runs on your computer and has no server of its own. Your profile, drafts, images, settings and your LinkedIn access token stay in the `data/` folder on your machine; nothing is sent to the project or anyone else. Text and images are made by local models (Ollama, mflux or ComfyUI). The only things that leave your computer are what you publish to LinkedIn, through your own LinkedIn developer app, the search words and country you send to job boards from Find jobs, and the one-time model downloads.
 
 ## Not affiliated with LinkedIn
 

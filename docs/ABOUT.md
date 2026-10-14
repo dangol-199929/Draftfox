@@ -22,7 +22,7 @@ Draftfox was built to fix that:
 - **Add images that stop the scroll.** Make a designed card with a hook, key points and a simple cartoon, or a plain picture, or add your own photos.
 - **Post now, later or automatically.** Publish straight to LinkedIn after a final preview, schedule a post for a date and time, or let it write a post every day, every 3 days or every week from your list of topics, either saved for your review or posted right away.
 - **See your progress.** The Reports page shows how many drafts you've written and posted over time, which tones and lengths you use, and links to everything you published.
-- **Apply for jobs with less busywork.** Paste a job you found and see how it fits your profile, with strengths and gaps. Get a cover letter and answers to application questions written only from your real experience, and track each job from saved to offer. You always open the job and click Apply yourself.
+- **Apply for jobs with less busywork.** Find jobs that match your profile or CV on job boards, or paste one you found, and see how it fits, with strengths and gaps. Get a cover letter and answers to application questions written only from your real experience, and track each job from saved to offer. You always open the job and click Apply yourself.
 
 ## Ways people use it
 

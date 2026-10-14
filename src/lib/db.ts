@@ -13,7 +13,7 @@ const DATA_DIR = join(process.cwd(), "data");
 const DB_FILE = join(DATA_DIR, "app.db");
 
 // Pages whose state is kept. Anything else is refused so the table can't fill with junk.
-export const STATE_KEYS = ["generate", "prompt", "profile"] as const;
+export const STATE_KEYS = ["generate", "prompt", "profile", "jobsearch"] as const;
 export type StateKey = (typeof STATE_KEYS)[number];
 
 export function isStateKey(key: string): key is StateKey {
