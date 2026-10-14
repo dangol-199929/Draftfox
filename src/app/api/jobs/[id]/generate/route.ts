@@ -4,19 +4,24 @@ import {
   answerQuestions,
   assessFit,
   hasProfileContent,
+  isEmailKind,
   MAX_ANSWERS,
+  prepareInterview,
+  tailorCv,
+  writeEmail,
   validateQuestions,
   whileWriting,
   writeLetter,
   WRITE_KINDS,
-  writingFor,
   type WriteKind,
 } from "@/lib/jobs.ts";
 import { readProfile } from "@/lib/profile.ts";
+import { jobResponse } from "@/lib/job-response.ts";
 
 export const runtime = "nodejs";
 
-// Body: { kind: "fit" | "letter" | "answers", questions?: string[] (for answers) }.
+// Body: { kind: "fit" | "letter" | "answers" | "cv" | "interview" | "email", questions?: string[] (for answers),
+// emailKind?: "follow-up" | "thank-you" (for email) }.
 // Writes that draft from your profile, saves it on the job and returns the job.
 export async function POST(request: Request, ctx: RouteContext<"/api/jobs/[id]/generate">) {
   const { id } = await ctx.params;
@@ -25,10 +30,12 @@ export async function POST(request: Request, ctx: RouteContext<"/api/jobs/[id]/g
 
   const body = await readJsonObject(request);
   const kind = body?.kind as WriteKind;
-  if (!WRITE_KINDS.includes(kind)) return badRequest(`"kind" must be fit, letter or answers.`);
+  if (!WRITE_KINDS.includes(kind)) return badRequest(`"kind" must be one of ${WRITE_KINDS.join(", ")}.`);
+  const emailKind = body?.emailKind ?? "follow-up";
+  if (kind === "email" && !isEmailKind(emailKind)) return badRequest(`"emailKind" must be follow-up or thank-you.`);
   const questions = kind === "answers" ? validateQuestions(body?.questions) : [];
   if (typeof questions === "string") return badRequest(questions);
-  if (kind !== "answers" && !job.description.trim()) {
+  if (kind !== "answers" && kind !== "email" && !job.description.trim()) {
     return badRequest("Paste the job description first, so there's something to compare your profile with.");
   }
 
@@ -45,6 +52,9 @@ export async function POST(request: Request, ctx: RouteContext<"/api/jobs/[id]/g
         const fit = job.fit ?? (await assessFit(job, profile));
         return { fit, letter: await writeLetter(job, profile, fit) };
       }
+      if (kind === "cv") return { tailoredCv: await tailorCv(job, profile) };
+      if (kind === "interview") return { interview: await prepareInterview(job, profile) };
+      if (kind === "email") return { email: await writeEmail(job, profile, isEmailKind(emailKind) ? emailKind : "follow-up") };
       // New answers are added below the ones you have; asking the same question again replaces its answer.
       const answers = await answerQuestions(job, profile, questions, job.fit);
       const kept = job.answers.filter((answer) => !questions.includes(answer.question));
@@ -56,5 +66,5 @@ export async function POST(request: Request, ctx: RouteContext<"/api/jobs/[id]/g
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 503 });
   }
-  return Response.json({ job: getJob(id), writing: writingFor(id) });
+  return jobResponse(id);
 }

@@ -1,6 +1,6 @@
 import { OLLAMA_MODEL } from "../src/lib/ollama.ts";
 import type { JobRecord } from "../src/lib/db.ts";
-import { answerQuestions, assessFit, writeLetter } from "../src/lib/jobs.ts";
+import { answerQuestions, assessFit, keywordCheck, prepareInterview, tailorCv, writeEmail, writeLetter } from "../src/lib/jobs.ts";
 import { EMPTY_PROFILE, type Profile } from "../src/lib/profile.ts";
 
 // A made-up profile and job for checking that the Jobs page drafts stay grounded in the profile.
@@ -54,6 +54,11 @@ Requirements:
   fit: null,
   letter: null,
   answers: [],
+  tailoredCv: null,
+  interview: null,
+  email: null,
+  contacts: [],
+  offer: null,
   createdAt: now,
   updatedAt: now,
 };
@@ -77,3 +82,14 @@ console.log(`# Jobs test: ${OLLAMA_MODEL}\n`);
 const fit = await timed("Fit", () => assessFit(job, profile));
 await timed("Cover letter", () => writeLetter(job, profile, fit));
 await timed("Answers", () => answerQuestions(job, profile, questions, fit));
+const withFit = { ...job, fit };
+await timed("Keywords", async () => keywordCheck(job, profile));
+await timed("Tailored CV", () => tailorCv(withFit, profile));
+await timed("Interview prep", () => prepareInterview(withFit, profile));
+await timed("Thank-you email", () =>
+  writeEmail(
+    { ...withFit, status: "interview", notes: "Interviewed with Alex on Oct 10 about the design system.", contacts: [{ name: "Alex Sample", role: "Engineering Manager", email: "", linkedin: "", notes: "" }] },
+    profile,
+    "thank-you",
+  ),
+);

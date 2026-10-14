@@ -3,20 +3,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  Check,
-  CircleAlert,
-  Copy,
-  ExternalLink,
-  FileText,
-  ListChecks,
-  Loader2,
-  MessageSquareText,
-  Pencil,
-  Sparkles,
-  Trash2,
-} from "lucide-react";
+import { Check, CircleAlert, ExternalLink, FileText, ListChecks, Loader2, MessageSquareText, Pencil, Trash2 } from "lucide-react";
 import { formatDate, formatDay, JobStatusBadge, MatchBadge, STATUS_LABELS } from "@/components/job-badges";
+import { ContactsCard, EmailCard, InterviewCard, Keywords, OfferCard, TailoredCvCard, type PartProps } from "@/components/job-parts";
+import {
+  CopyButton,
+  DownloadButton,
+  Field,
+  Gaps,
+  SaveState,
+  ToCheck,
+  WriteButton,
+  WriteError,
+  type WriteKind,
+} from "@/components/job-ui";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -38,8 +38,8 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { JobAnswer, JobRecord } from "@/lib/db.ts";
 import { JOB_STATUSES, type JobStatus } from "@/lib/job-status.ts";
 
-type WriteKind = "fit" | "letter" | "answers";
-type JobResponse = { job: JobRecord; writing: WriteKind[] };
+type Keywords = { found: string[]; missing: string[] };
+type JobResponse = { job: JobRecord; writing: WriteKind[]; keywords: Keywords };
 
 // The text you edit on this page. Saved shortly after you stop typing.
 type Draft = Pick<JobRecord, "title" | "company" | "location" | "url" | "description" | "notes"> & {
@@ -86,12 +86,14 @@ export function JobWorkspace({ id }: { id: string }) {
   const [editingDetails, setEditingDetails] = useState(false);
   const [questions, setQuestions] = useState("");
   const [openedLink, setOpenedLink] = useState(false);
+  const [keywords, setKeywords] = useState<Keywords | null>(null);
   const lastSaved = useRef<string | null>(null);
 
   // Takes the job from the server. Fields the server wrote (a new letter or answers) replace what's on the page.
   const receive = useCallback((data: JobResponse, replace: (keyof Draft)[] = []) => {
     setJob(data.job);
     setWriting(data.writing);
+    setKeywords(data.keywords);
     const fresh = toDraft(data.job);
     setDraft((current) => {
       if (!current) {
@@ -145,6 +147,7 @@ export function JobWorkspace({ id }: { id: string }) {
       const data = await request<JobResponse>(`/api/jobs/${id}`, json("PATCH", changes));
       lastSaved.current = sending;
       setJob(data.job);
+      setKeywords(data.keywords);
       setSaving("saved");
       setSaveError("");
       return true;
@@ -168,7 +171,8 @@ export function JobWorkspace({ id }: { id: string }) {
   });
   useEffect(() => () => void saveRef.current(), []);
 
-  async function patch(changes: Partial<Pick<JobRecord, "status" | "followUp">>) {
+  // Saves fields right away (status, date, and the cards' own edits).
+  async function patch(changes: Record<string, unknown>) {
     try {
       const data = await request<JobResponse>(`/api/jobs/${id}`, json("PATCH", changes));
       setJob(data.job);
@@ -232,6 +236,7 @@ export function JobWorkspace({ id }: { id: string }) {
     (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setDraft((current) => current && { ...current, [field]: event.target.value });
   const isWriting = (kind: WriteKind) => writing.includes(kind);
+  const parts: PartProps = { job, writing, errors: writeErrors, onWrite: (kind, body) => void write(kind, body), onPatch: patch };
   const pendingQuestions = questions.split("\n").map((line) => line.trim()).filter(Boolean);
 
   return (
@@ -354,6 +359,8 @@ export function JobWorkspace({ id }: { id: string }) {
         </CardContent>
       </Card>
 
+      <ContactsCard {...parts} />
+
       {/* How it fits your profile */}
       <Card>
         <CardHeader>
@@ -407,6 +414,7 @@ export function JobWorkspace({ id }: { id: string }) {
               <ToCheck items={job.fit.unverified} />
             </>
           )}
+          <Keywords keywords={keywords} />
           <WriteButton
             kind="fit"
             done={Boolean(job.fit)}
@@ -428,8 +436,9 @@ export function JobWorkspace({ id }: { id: string }) {
           </CardTitle>
           <CardDescription>Written only from your profile. Read it and make it yours before you send it.</CardDescription>
           {draft.letter && (
-            <CardAction>
+            <CardAction className="flex gap-2">
               <CopyButton text={draft.letter} />
+              {job.letter && <DownloadButton href={`/api/jobs/${id}/docx?doc=letter`} />}
             </CardAction>
           )}
         </CardHeader>
@@ -467,6 +476,8 @@ export function JobWorkspace({ id }: { id: string }) {
           <WriteError message={writeErrors.letter} />
         </CardContent>
       </Card>
+
+      <TailoredCvCard {...parts} />
 
       {/* Application questions */}
       <Card>
@@ -554,6 +565,10 @@ export function JobWorkspace({ id }: { id: string }) {
         </CardContent>
       </Card>
 
+      <InterviewCard {...parts} />
+      <EmailCard {...parts} />
+      <OfferCard {...parts} />
+
       <div>
         <AlertDialog>
           <AlertDialogTrigger asChild>
@@ -582,125 +597,3 @@ export function JobWorkspace({ id }: { id: string }) {
   );
 }
 
-function Field({ id, label, children }: { id: string; label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid content-start gap-2">
-      <Label htmlFor={id}>{label}</Label>
-      {children}
-    </div>
-  );
-}
-
-function Gaps({ gaps }: { gaps: string[] }) {
-  return (
-    <ul className="grid gap-1.5">
-      {gaps.map((gap) => (
-        <li key={gap} className="flex gap-2 text-sm">
-          <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
-          {gap}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-// Details the model wrote that the profile doesn't back up.
-function ToCheck({ items }: { items: string[] }) {
-  if (items.length === 0) return null;
-  return (
-    <p className="flex gap-1.5 text-xs text-amber-700 dark:text-amber-400">
-      <CircleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
-      <span>
-        Not found in your profile, so check before sending: <strong>{items.join(", ")}</strong>
-      </span>
-    </p>
-  );
-}
-
-function WriteButton({
-  kind,
-  done,
-  writing,
-  disabled,
-  label,
-  confirm,
-  onClick,
-}: {
-  kind: WriteKind;
-  done: boolean;
-  writing: boolean;
-  disabled: boolean;
-  label: string;
-  confirm?: string;
-  onClick: () => void;
-}) {
-  const button = (
-    <Button variant={done ? "outline" : "default"} className="justify-self-start" disabled={writing || disabled} onClick={confirm ? undefined : onClick}>
-      {writing ? <Loader2 className="animate-spin" /> : <Sparkles />}
-      {writing ? (kind === "fit" ? "Checking…" : "Writing…") : label}
-    </Button>
-  );
-  if (!confirm || writing || disabled) return button;
-  return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>{button}</AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{label}?</AlertDialogTitle>
-          <AlertDialogDescription>{confirm}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={onClick}>{label}</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-
-function WriteError({ message }: { message?: string }) {
-  if (!message) return null;
-  return (
-    <Alert variant="destructive">
-      <CircleAlert />
-      <AlertDescription>
-        <p>{message}</p>
-        {message.includes("Profile page") && (
-          <Link href="/profile" className="underline underline-offset-4">
-            Go to Profile
-          </Link>
-        )}
-      </AlertDescription>
-    </Alert>
-  );
-}
-
-function CopyButton({ text, small = false }: { text: string; small?: boolean }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard blocked (e.g. not a secure context); the text can still be selected by hand.
-    }
-  }
-  return small ? (
-    <Button size="icon-xs" variant="ghost" aria-label="Copy" onClick={() => void copy()}>
-      {copied ? <Check /> : <Copy />}
-    </Button>
-  ) : (
-    <Button size="sm" variant="outline" onClick={() => void copy()}>
-      {copied ? <Check /> : <Copy />}
-      {copied ? "Copied" : "Copy"}
-    </Button>
-  );
-}
-
-function SaveState({ state }: { state: "idle" | "saving" | "saved" | "error" }) {
-  if (state === "saving") return <span className="text-xs text-muted-foreground">Saving…</span>;
-  if (state === "saved") return <span className="text-xs text-muted-foreground">Saved</span>;
-  if (state === "error") return <span className="text-xs text-destructive">Not saved</span>;
-  return null;
-}

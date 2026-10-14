@@ -98,14 +98,32 @@ const SCHEMA = `
 // The schema is re-applied when SCHEMA changes, so a running dev server picks up new tables without a restart.
 const globalForDb = globalThis as typeof globalThis & { appDb?: DatabaseSync; appDbSchema?: string };
 
+// Columns added after a table was first released, as [table, column, type]. CREATE TABLE IF NOT EXISTS doesn't
+// change a table that already exists, so these are added to it here.
+const ADDED_COLUMNS = [
+  ["jobs", "tailored_cv", "TEXT"],
+  ["jobs", "interview", "TEXT"],
+  ["jobs", "email", "TEXT"],
+  ["jobs", "contacts", "TEXT"],
+  ["jobs", "offer", "TEXT"],
+] as const;
+
+function addColumns(database: DatabaseSync): void {
+  for (const [table, column, type] of ADDED_COLUMNS) {
+    const columns = database.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!columns.some((existing) => existing.name === column)) database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
+
 function db(): DatabaseSync {
   if (!globalForDb.appDb) {
     mkdirSync(DATA_DIR, { recursive: true });
     globalForDb.appDb = new DatabaseSync(DB_FILE);
   }
-  if (globalForDb.appDbSchema !== SCHEMA) {
+  if (globalForDb.appDbSchema !== SCHEMA + ADDED_COLUMNS.join()) {
     globalForDb.appDb.exec(SCHEMA);
-    globalForDb.appDbSchema = SCHEMA;
+    addColumns(globalForDb.appDb);
+    globalForDb.appDbSchema = SCHEMA + ADDED_COLUMNS.join();
   }
   return globalForDb.appDb;
 }
@@ -440,6 +458,21 @@ export type JobLetter = { text: string; gaps: string[]; unverified: string[]; at
 
 export type JobAnswer = { question: string; answer: string; gap: string; unverified: string[] };
 
+// Your CV reworded and reordered for one job, from your profile only.
+export type JobCv = { text: string; unverified: string[]; at: string };
+
+export type JobInterviewQuestion = { question: string; why: string; answer: string; gap: string; unverified: string[] };
+export type JobInterview = { questions: JobInterviewQuestion[]; at: string };
+
+export type JobEmailKind = "follow-up" | "thank-you";
+export type JobEmail = { kind: JobEmailKind; text: string; unverified: string[]; at: string };
+
+export type JobContact = { name: string; role: string; email: string; linkedin: string; notes: string };
+
+// What an offer includes, as you wrote it, for comparing offers side by side.
+export const OFFER_FIELDS = ["salary", "bonus", "equity", "leave", "benefits", "workMode", "startDate", "deadline", "notes"] as const;
+export type JobOffer = Record<(typeof OFFER_FIELDS)[number], string>;
+
 export type JobRecord = {
   id: string;
   title: string;
@@ -456,6 +489,11 @@ export type JobRecord = {
   fit: JobFit | null;
   letter: JobLetter | null;
   answers: JobAnswer[];
+  tailoredCv: JobCv | null;
+  interview: JobInterview | null;
+  email: JobEmail | null;
+  contacts: JobContact[];
+  offer: JobOffer | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -474,6 +512,11 @@ type JobRow = {
   fit: string | null;
   letter: string | null;
   answers: string;
+  tailored_cv: string | null;
+  interview: string | null;
+  email: string | null;
+  contacts: string | null;
+  offer: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -502,6 +545,11 @@ function toJob(row: JobRow): JobRecord {
     fit: parseJson(row.fit, null),
     letter: parseJson(row.letter, null),
     answers: parseJson(row.answers, []),
+    tailoredCv: parseJson(row.tailored_cv, null),
+    interview: parseJson(row.interview, null),
+    email: parseJson(row.email, null),
+    contacts: parseJson(row.contacts, []),
+    offer: parseJson(row.offer, null),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -555,8 +603,13 @@ const JOB_COLUMNS: Record<string, string> = {
   fit: "fit",
   letter: "letter",
   answers: "answers",
+  tailoredCv: "tailored_cv",
+  interview: "interview",
+  email: "email",
+  contacts: "contacts",
+  offer: "offer",
 };
-const JSON_JOB_FIELDS = ["history", "fit", "letter", "answers"];
+const JSON_JOB_FIELDS = ["history", "fit", "letter", "answers", "tailoredCv", "interview", "email", "contacts", "offer"];
 
 export type JobChanges = Partial<Omit<JobRecord, "id" | "createdAt" | "updatedAt">>;
 

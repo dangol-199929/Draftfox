@@ -2,7 +2,21 @@
 // profile, writes a cover letter and drafts answers to application questions. Everything it writes must come from
 // the profile: what the job asks for and the profile doesn't show is listed as a gap for you to fill in, never made up.
 // Nothing here visits job sites or applies anywhere; you open the job link and apply yourself.
-import { isJobStatus, type JobAnswer, type JobFit, type JobLetter, type JobRecord, type JobStatus } from "./db.ts";
+import {
+  isJobStatus,
+  OFFER_FIELDS,
+  type JobAnswer,
+  type JobContact,
+  type JobCv,
+  type JobEmail,
+  type JobEmailKind,
+  type JobFit,
+  type JobInterview,
+  type JobLetter,
+  type JobOffer,
+  type JobRecord,
+  type JobStatus,
+} from "./db.ts";
 import { generateJson } from "./ollama.ts";
 import type { Profile } from "./profile.ts";
 
@@ -106,8 +120,10 @@ type JobFacts = Pick<JobRecord, "title" | "company" | "location" | "description"
 // Details in what the model wrote that the profile doesn't back up: numbers (like "5 years" or "40%") found in
 // neither the profile nor the job, and names from the job (like "Kubernetes") that the profile never mentions.
 // A cheap safety net for the most common kinds of made-up detail; the page lists them so you check before sending.
-export function detailsToCheck(output: string, job: JobFacts, profile: Profile): string[] {
-  const profileSource = profileText(profile);
+// `extra` is other text the draft may rightly use, such as your notes on the job.
+export function detailsToCheck(output: string, job: JobFacts, profile: Profile, extra = ""): string[] {
+  const profileSource = `${profileText(profile)}
+${extra}`;
   const known = new Set((`${profileSource}\n${jobText(job)}`.match(/\d[\d,.]*/g) ?? []).map(normalizeNumber));
   const numbers = (output.match(/\d[\d,.]*\s*(%|\+|k\b)?/gi) ?? [])
     .map((match) => match.trim().replace(/[.,]$/, ""))
@@ -128,8 +144,12 @@ export function detailsToCheck(output: string, job: JobFacts, profile: Profile):
     terms.add(term);
   }
   const mentioned = [...terms].filter((term) => containsWord(output, term));
-  return [...new Set([...numbers, ...durations, ...mentioned])];
+  // Email addresses and web links the model may have made up.
+  const contacts = (output.match(CONTACT_DETAIL) ?? []).filter((match) => !sourceLower.includes(match.toLowerCase()));
+  return [...new Set([...numbers, ...durations, ...mentioned, ...contacts])];
 }
+
+const CONTACT_DETAIL = /[\w.+-]+@[\w-]+(\.[\w-]+)+|https?:\/\/[^\s)]*[^\s).,;:]|\bwww\.[^\s)]*[^\s).,;:]/gi;
 
 const DURATION =
   /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|several|many|a few|over a|over|nearly|almost)\s+(years?|months?|decades?)\b/gi;
@@ -140,7 +160,8 @@ function containsWord(text: string, word: string): boolean {
 }
 
 function normalizeNumber(text: string): string {
-  return text.replace(/[^\d.]/g, "").replace(/\.$/, "");
+  // "01" (from a date) and "1" are the same number.
+  return text.replace(/[^\d.]/g, "").replace(/\.$/, "").replace(/^0+(?=\d)/, "");
 }
 
 const tidy = (text: unknown, max: number) => String(text ?? "").trim().slice(0, max);
@@ -262,6 +283,160 @@ export async function answerQuestions(job: JobRecord, profile: Profile, question
   });
 }
 
+// --- Keyword check ---
+
+const NOT_KEYWORDS = new Set(
+  ("I We You Our Your The This That They It He She And Or But If In On At For With Of To As By " +
+    "Monday Tuesday Wednesday Thursday Friday Saturday Sunday January February March April May June July August " +
+    "September October November December Equal Opportunity Employer").split(" "),
+);
+
+// Names and terms the job mentions (tools, skills, certifications, like "Kubernetes" or "AWS"), split into the
+// ones your profile mentions and the ones it doesn't. No model involved: it's a word-for-word comparison.
+export function keywordCheck(job: JobFacts, profile: Profile | null): { found: string[]; missing: string[] } {
+  const own = `${job.title} ${job.company} ${job.location}`.toLowerCase();
+  const counts = new Map<string, { term: string; count: number }>();
+  for (const match of job.description.matchAll(/(?<=[a-z,;:/(] )([A-Z][\w+#.-]*[\w+#]|[A-Z])(?=[\s,.;:)/]|$)/gm)) {
+    const term = match[1].replace(/\.$/, "");
+    if ((term.length < 2 && term !== "C" && term !== "R") || NOT_KEYWORDS.has(term)) continue;
+    if (own.split(/\s+/).includes(term.toLowerCase())) continue;
+    const key = term.toLowerCase();
+    const entry = counts.get(key) ?? { term, count: 0 };
+    entry.count++;
+    counts.set(key, entry);
+  }
+  const terms = [...counts.values()].sort((a, b) => b.count - a.count).map((entry) => entry.term).slice(0, 40);
+  const profileLower = profile ? profileText(profile).toLowerCase() : "";
+  const found = terms.filter((term) => containsWord(profileLower, term.toLowerCase()));
+  return { found, missing: terms.filter((term) => !found.includes(term)) };
+}
+
+// --- Tailored CV ---
+
+const CV_SYSTEM = `You tailor the CV of the person in the PROFILE for the JOB.
+Rules:
+${GROUNDING}
+- You may reorder, shorten and reword. Put the experience and skills that matter most for the JOB first, and use the JOB's words where the PROFILE already shows the same thing.
+- Keep every employer, title, school and date exactly as the PROFILE has them. Leave out what isn't relevant rather than inventing anything.
+- Never mention anything under NOT IN THE PROFILE.
+- Plain text in this layout:
+  Line 1: the person's name. Line 2: [Email · Phone · LinkedIn] for them to fill in. Line 3: a short headline for this job, from their real roles.
+  Then sections, each starting with a line like "# Summary", "# Experience", "# Skills", "# Education".
+  Under Experience, each role as a line "Title, Company (dates)" followed by bullet lines starting with "- ".
+  Leave out a section when the PROFILE has nothing for it.
+- No emojis.`;
+
+const CV_SCHEMA = { type: "object", properties: { cv: { type: "string" } }, required: ["cv"] };
+
+const CV_CONTACT_LINE = "[Email · Phone · LinkedIn]";
+
+export async function tailorCv(job: JobRecord, profile: Profile): Promise<JobCv> {
+  const reply = await generateJson<{ cv?: unknown }>(prompt(job, profile, ...fitSections(job.fit)), CV_SYSTEM, CV_SCHEMA);
+  // The profile never holds contact details, so the contact line is always a placeholder for you to fill in (the
+  // model tends to make one up), and any other email address or link not in the profile becomes a gap.
+  const known = profileText(profile).toLowerCase();
+  const lines = tidy(reply.cv, LIMITS.letter).split("\n");
+  if (lines.length > 1 && /@|\d{3}|linkedin|\[|\||·/i.test(lines[1])) lines[1] = CV_CONTACT_LINE;
+  else if (lines.length > 1) lines.splice(1, 0, CV_CONTACT_LINE);
+  const text = lines
+    .join("\n")
+    .replace(CONTACT_DETAIL, (match) => (known.includes(match.toLowerCase()) ? match : match.includes("@") ? "[Email]" : "[Link]"));
+  if (!text) throw new Error("The model didn't write a CV. Try again.");
+  return { text, unverified: detailsToCheck(text, job, profile), at: new Date().toISOString() };
+}
+
+// --- Interview prep ---
+
+const INTERVIEW_SYSTEM = `You help the person in the PROFILE prepare for an interview for the JOB.
+Rules:
+${GROUNDING}
+- questions: 6 questions the interviewer is likely to ask, based on the JOB: a mix of questions about their experience, the job's main requirements and how they work.
+- why: one short sentence naming the requirement in the JOB that makes this question likely.
+- answer: a first-person answer using only details the PROFILE states, 2 to 4 sentences. Don't add how something was done, who was involved, routines, motives or results unless the PROFILE says so. A short answer is better than an invented one.
+- gap: written to the person as "you": what to prepare to make the answer complete, like the specifics of what they did, how and the result, or an example the PROFILE doesn't have. Use "" only when the PROFILE already gives a full example. If the PROFILE can't answer at all, set answer to "".
+- Never say or imply the person has anything under NOT IN THE PROFILE.
+- No emojis.`;
+
+const INTERVIEW_SCHEMA = {
+  type: "object",
+  properties: {
+    questions: {
+      type: "array",
+      minItems: 4,
+      maxItems: 8,
+      items: {
+        type: "object",
+        properties: { question: { type: "string" }, why: { type: "string" }, answer: { type: "string" }, gap: { type: "string" } },
+        required: ["question", "why", "answer", "gap"],
+      },
+    },
+  },
+  required: ["questions"],
+};
+
+export async function prepareInterview(job: JobRecord, profile: Profile): Promise<JobInterview> {
+  const reply = await generateJson<{ questions?: { question?: unknown; why?: unknown; answer?: unknown; gap?: unknown }[] }>(
+    prompt(job, profile, ...fitSections(job.fit)),
+    INTERVIEW_SYSTEM,
+    INTERVIEW_SCHEMA,
+  );
+  const questions = (Array.isArray(reply.questions) ? reply.questions : [])
+    .map((item) => {
+      const answer = tidy(item?.answer, LIMITS.answer);
+      return {
+        question: tidy(item?.question, LIMITS.question),
+        why: tidy(item?.why, 300),
+        answer,
+        // The model sometimes writes "None, the profile covers it" instead of leaving the gap empty.
+        gap: /^(none|n\/a|no gap)\b/i.test(tidy(item?.gap, 500)) ? "" : tidy(item?.gap, 500),
+        unverified: detailsToCheck(answer, job, profile),
+      };
+    })
+    .filter((item) => item.question)
+    .slice(0, 8);
+  if (questions.length === 0) throw new Error("The model didn't write any questions. Try again.");
+  return { questions, at: new Date().toISOString() };
+}
+
+// --- Follow-up and thank-you emails ---
+
+const EMAIL_SYSTEM = `You write a short email for the person in the PROFILE about their application for the JOB. They send it themselves.
+Rules:
+${GROUNDING}
+- Use only what's in the PROFILE, the JOB, the APPLICATION details and the person's NOTES. Never invent what was said in an interview, names, dates or next steps.
+- Don't say when anything happened ("today", "yesterday", "last week") unless the NOTES say it. Mention what was discussed only as the NOTES put it.
+- Never say or imply the person has anything under NOT IN THE PROFILE, or can do parts of the job the PROFILE doesn't show.
+- First line "Subject: ...", then a blank line, then the email.
+- Greet the CONTACT by first name if one is given, otherwise "Hello,".
+- Under 150 words. Polite, warm and direct.
+- Sign off with the person's name from the PROFILE.
+- No emojis.`;
+
+const EMAIL_PURPOSE: Record<JobEmailKind, string> = {
+  "follow-up": "A follow-up after applying: politely ask whether there's an update on the application and restate interest in one sentence that names one real match from the PROFILE.",
+  "thank-you": "A thank-you after an interview: thank them for their time, say they enjoyed learning about the role, and restate interest with one real match from the PROFILE. Only mention what was discussed if the NOTES say so.",
+};
+
+const EMAIL_SCHEMA = { type: "object", properties: { email: { type: "string" } }, required: ["email"] };
+
+export async function writeEmail(job: JobRecord, profile: Profile, kind: JobEmailKind): Promise<JobEmail> {
+  const contact = job.contacts.find((item) => item.name.trim());
+  const applied = [...job.history].reverse().find((step) => step.status === "applied");
+  const details = [
+    `EMAIL\n${EMAIL_PURPOSE[kind]}`,
+    `APPLICATION\nStatus: ${job.status}${applied ? `\nApplied on: ${applied.at.slice(0, 10)}` : ""}`,
+    contact ? `CONTACT\n${[contact.name, contact.role].filter(Boolean).join(", ")}` : "",
+    job.notes.trim() ? `NOTES\n${clip(job.notes.trim(), 1500)}` : "",
+  ];
+  const reply = await generateJson<{ email?: unknown }>(prompt(job, profile, ...fitSections(job.fit), ...details), EMAIL_SYSTEM, EMAIL_SCHEMA);
+  const text = tidy(reply.email, 5000);
+  if (!text) throw new Error("The model didn't write an email. Try again.");
+  const sources = `${job.notes}\n${contact?.name ?? ""} ${contact?.role ?? ""}\n${applied?.at.slice(0, 10) ?? ""}`;
+  // Names from the notes and contact are fine to use, so they're added to what the check knows about.
+  const unverified = detailsToCheck(text, job, profile, sources);
+  return { kind, text, unverified, at: new Date().toISOString() };
+}
+
 // --- Validation for the API routes ---
 
 export type JobInput = Pick<JobRecord, "title" | "company" | "location" | "url" | "description">;
@@ -338,9 +513,46 @@ export function validateAnswerEdits(value: unknown, current: JobAnswer[]): JobAn
   return answers;
 }
 
+export const MAX_CONTACTS = 10;
+
+export function validateContacts(value: unknown): JobContact[] | string {
+  if (!Array.isArray(value) || value.length > MAX_CONTACTS) return `Add at most ${MAX_CONTACTS} contacts.`;
+  const contacts: JobContact[] = [];
+  for (const item of value as unknown[]) {
+    const contact = {} as JobContact;
+    for (const field of ["name", "role", "email", "linkedin", "notes"] as const) {
+      const v = (item as Record<string, unknown>)?.[field] ?? "";
+      if (typeof v !== "string" || v.length > (field === "notes" ? 2000 : LIMITS.short)) return "One of the contacts is too long.";
+      contact[field] = v;
+    }
+    if (contact.linkedin.trim() && !isWebLink(contact.linkedin.trim())) return "A LinkedIn link must start with https://.";
+    contacts.push(contact);
+  }
+  return contacts;
+}
+
+// null clears the offer details.
+export function validateOffer(value: unknown): JobOffer | null | string {
+  if (value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) return "The offer must be an object.";
+  const offer = {} as JobOffer;
+  for (const field of OFFER_FIELDS) {
+    const v = (value as Record<string, unknown>)[field] ?? "";
+    if (typeof v !== "string" || v.length > (field === "notes" || field === "benefits" ? 2000 : LIMITS.short)) {
+      return "One of the offer details is too long.";
+    }
+    offer[field] = v;
+  }
+  return offer;
+}
+
+export function isEmailKind(value: unknown): value is JobEmailKind {
+  return value === "follow-up" || value === "thank-you";
+}
+
 // --- What's being written right now ---
 
-export const WRITE_KINDS = ["fit", "letter", "answers"] as const;
+export const WRITE_KINDS = ["fit", "letter", "answers", "cv", "interview", "email"] as const;
 export type WriteKind = (typeof WRITE_KINDS)[number];
 
 // Kept on globalThis like the database connection, so it survives dev hot reloads. Lets the page show that a
@@ -362,4 +574,56 @@ export async function whileWriting<T>(jobId: string, kind: WriteKind, task: () =
   } finally {
     runningSet().delete(key);
   }
+}
+
+// --- Duplicates and export ---
+
+// The saved job with the same link (ignoring tracking parameters and a trailing slash), or the same title at the
+// same company, if there is one.
+export function findDuplicate(jobs: JobRecord[], job: Partial<Pick<JobRecord, "title" | "company" | "url">>): JobRecord | null {
+  const link = normalizeLink(job.url ?? "");
+  const name = job.company?.trim() ? `${job.title}|${job.company}`.toLowerCase().replace(/[^a-z0-9|]/g, "") : "";
+  return (
+    jobs.find(
+      (other) =>
+        (link && normalizeLink(other.url) === link) ||
+        (name && other.company.trim() && `${other.title}|${other.company}`.toLowerCase().replace(/[^a-z0-9|]/g, "") === name),
+    ) ?? null
+  );
+}
+
+function normalizeLink(url: string): string {
+  if (!isWebLink(url)) return "";
+  const parsed = new URL(url);
+  for (const key of [...parsed.searchParams.keys()]) {
+    if (/^(utm_|ref|source|trk|refid|tracking)/i.test(key)) parsed.searchParams.delete(key);
+  }
+  return `${parsed.host.replace(/^www\./, "")}${parsed.pathname.replace(/\/$/, "")}${parsed.search}`.toLowerCase();
+}
+
+const CSV_COLUMNS: [string, (job: JobRecord) => string][] = [
+  ["Title", (job) => job.title],
+  ["Company", (job) => job.company],
+  ["Location", (job) => job.location],
+  ["Status", (job) => job.status],
+  ["Saved", (job) => job.createdAt.slice(0, 10)],
+  ["Applied", (job) => job.history.find((step) => step.status === "applied")?.at.slice(0, 10) ?? ""],
+  ["Last status change", (job) => job.history.at(-1)?.at.slice(0, 10) ?? ""],
+  ["Next step", (job) => job.followUp ?? ""],
+  ["Fit", (job) => job.fit?.match ?? ""],
+  ["Contacts", (job) => job.contacts.map((contact) => [contact.name, contact.role, contact.email].filter(Boolean).join(", ")).join("; ")],
+  ["Salary offered", (job) => job.offer?.salary ?? ""],
+  ["Link", (job) => job.url],
+  ["Notes", (job) => job.notes],
+];
+
+export function jobsCsv(jobs: JobRecord[]): string {
+  const cell = (value: string) => {
+    // A leading = + - @ would run as a formula in a spreadsheet.
+    const safe = /^[=+\-@]/.test(value) ? `'${value}` : value;
+    return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+  };
+  const rows = [CSV_COLUMNS.map(([name]) => name), ...jobs.map((job) => CSV_COLUMNS.map(([, get]) => get(job)))];
+  // The byte order mark makes Excel read the file as UTF-8.
+  return `﻿${rows.map((row) => row.map(cell).join(",")).join("\r\n")}\r\n`;
 }
