@@ -20,7 +20,7 @@ export function ActivityChart({ buckets }: { buckets: Bucket[] }) {
           Drafts generated
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="size-2.5 rounded-sm bg-foreground" aria-hidden />
+          <span className="size-2.5 rounded-sm bg-brand" aria-hidden />
           Posted to LinkedIn
         </span>
         <span className="ml-auto min-h-4 tabular-nums text-foreground" aria-live="polite">
@@ -60,7 +60,7 @@ export function ActivityChart({ buckets }: { buckets: Bucket[] }) {
                 aria-label={`${bucket.label}: ${plural(bucket.drafts, "draft")}, ${plural(bucket.published, "post")}`}
               >
                 <Bar value={bucket.drafts} top={top} className="bg-chart-2" />
-                <Bar value={bucket.published} top={top} className="bg-foreground" />
+                <Bar value={bucket.published} top={top} className="bg-brand" />
               </div>
             ))}
           </div>

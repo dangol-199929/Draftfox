@@ -18,7 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-dvh bg-background text-foreground antialiased">
         <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange>
           <SiteHeader />
-          <main className="mx-auto max-w-5xl px-4 py-8 sm:py-12">{children}</main>
+          <div className="md:pl-56">
+            <main className="mx-auto max-w-6xl px-4 pt-6 pb-24 sm:px-6 md:px-8 md:py-10">{children}</main>
+          </div>
         </ThemeProvider>
       </body>
     </html>

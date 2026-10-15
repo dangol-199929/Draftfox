@@ -273,7 +273,7 @@ export function CardMaker({ postText, onImage }: { postText: string; onImage: (i
         <div className="grid gap-1.5" aria-live="polite">
           <div className="h-1.5 overflow-hidden rounded-full bg-muted">
             <div
-              className={`h-full rounded-full bg-foreground transition-[width] ${percent === null ? "w-1/4 animate-pulse" : ""}`}
+              className={`h-full rounded-full bg-primary transition-[width] ${percent === null ? "w-1/4 animate-pulse" : ""}`}
               style={percent === null ? undefined : { width: `${percent}%` }}
             />
           </div>

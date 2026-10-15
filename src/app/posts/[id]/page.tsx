@@ -11,7 +11,7 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
     <div className="grid gap-6">
       <div className="grid gap-1">
         <Link
-          href="/posts"
+          href="/"
           className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-3.5" /> All posts

@@ -202,7 +202,7 @@ export function PostEditor({ id }: { id: string }) {
       if (!window.confirm("Delete this draft and its images? This can't be undone.")) return;
       lastSaved.current = draftJson; // nothing left to save
       await request(`/api/posts/${id}`, { method: "DELETE" });
-      router.push("/posts");
+      router.push("/");
     });
 
   const unpublish = () =>
@@ -225,7 +225,7 @@ export function PostEditor({ id }: { id: string }) {
         <AlertTitle>Couldn&apos;t open the post</AlertTitle>
         <AlertDescription>
           <p>{loadError}</p>
-          <Link href="/posts" className="underline underline-offset-2">
+          <Link href="/" className="underline underline-offset-2">
             Back to posts
           </Link>
         </AlertDescription>
