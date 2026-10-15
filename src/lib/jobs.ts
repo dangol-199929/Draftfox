@@ -18,7 +18,6 @@ import {
   type JobStatus,
 } from "./db.ts";
 import { generateJson } from "./ollama.ts";
-export { keywordScore } from "./job-status.ts";
 import type { Profile } from "./profile.ts";
 
 export const LIMITS = { short: 200, url: 2000, description: 20_000, notes: 10_000, letter: 10_000, question: 1000, answer: 5000 };

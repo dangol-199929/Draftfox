@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bookmark, Check, ChevronDown, Loader2, Plus, Search, Sparkles, X } from "lucide-react";
+import { Bookmark, Check, ChevronDown, ExternalLink, Loader2, Plus, Search, Sparkles, X } from "lucide-react";
 import { JobDrawer } from "@/components/job-drawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,17 +9,17 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { JobRecord } from "@/lib/db.ts";
-import { COUNTRIES, SOURCE_SITES } from "@/lib/job-links.ts";
+import { boardLinks, COUNTRIES, DEFAULT_PREFS, POSTED_WITHIN, SOURCE_SITES, type PostedWithin, type SearchPrefs } from "@/lib/job-links.ts";
 import type { FoundJob, SourceResult } from "@/lib/job-search.ts";
 import { useSavedState } from "@/lib/use-saved-state.ts";
 import { cn } from "@/lib/utils";
 
-type Search = { queries: string[]; country: string; place: string; skills: string[] };
+type Search = { queries: string[]; country: string; place: string; skills: string[] } & SearchPrefs;
 type Saved = Search & { results: FoundJob[] | null; sources: SourceResult[]; searchedAt: string | null; savedSearchId?: string | null };
 type SavedSearch = Search & { id: string; name: string; lastRun: string | null; seenCount: number };
 type Suggestion = { searches: string[]; skills: string[]; country: string; fromModel: boolean; adzuna: boolean; profileEmpty: boolean };
 
-const EMPTY_SEARCH: Search = { queries: ["", "", ""], country: "", place: "", skills: [] };
+const EMPTY_SEARCH: Search = { queries: ["", "", ""], country: "", place: "", skills: [], ...DEFAULT_PREFS };
 
 // Searches job boards and lists the matching jobs right here; onSaved hears about each one saved to your list.
 export function JobFinder({ onSaved }: { onSaved?: (job: JobRecord) => void }) {
@@ -47,7 +47,14 @@ export function JobFinder({ onSaved }: { onSaved?: (job: JobRecord) => void }) {
     "jobsearch",
     { ...search, results, sources, searchedAt, savedSearchId },
     (saved) => {
-      setSearch({ queries: [...saved.queries, "", "", ""].slice(0, 3), country: saved.country, place: saved.place, skills: saved.skills ?? [] });
+      setSearch({
+        queries: [...saved.queries, "", "", ""].slice(0, 3),
+        country: saved.country,
+        place: saved.place,
+        skills: saved.skills ?? [],
+        remoteOnly: saved.remoteOnly ?? false,
+        postedWithin: saved.postedWithin ?? "",
+      });
       setResults(saved.results);
       setSources(saved.sources ?? []);
       setSearchedAt(saved.searchedAt);
@@ -119,6 +126,8 @@ export function JobFinder({ onSaved }: { onSaved?: (job: JobRecord) => void }) {
           country: from.country,
           place: from.place,
           skills: from.skills,
+          remoteOnly: from.remoteOnly,
+          postedWithin: from.postedWithin,
           savedSearchId: fromId ?? undefined,
         }),
       });
@@ -149,8 +158,8 @@ export function JobFinder({ onSaved }: { onSaved?: (job: JobRecord) => void }) {
           location: job.location.slice(0, 200),
           url: job.url,
           description: job.description,
-          notes: `Found on ${job.source}${job.salary ? `. Salary listed: ${job.salary}` : ""}.`,
-          source: job.source,
+          notes: `Found on ${job.via ?? job.source}${job.salary ? `. Salary listed: ${job.salary}` : ""}.`,
+          source: job.via ?? job.source,
           salary: job.salary,
           postedAt: job.postedAt,
         }),
@@ -172,7 +181,8 @@ export function JobFinder({ onSaved }: { onSaved?: (job: JobRecord) => void }) {
 
   // Running a saved search again: fill in the form and search, marking what's new.
   function runSaved(saved: SavedSearch) {
-    const from = { queries: [...saved.queries, "", "", ""].slice(0, 3), country: saved.country, place: saved.place, skills: saved.skills };
+    // Your remote and date preferences stay as they are.
+    const from = { ...search, queries: [...saved.queries, "", "", ""].slice(0, 3), country: saved.country, place: saved.place, skills: saved.skills };
     setSearch(from);
     setSavedSearchId(saved.id);
     void run(undefined, from, saved.id);
@@ -301,6 +311,31 @@ export function JobFinder({ onSaved }: { onSaved?: (job: JobRecord) => void }) {
                 />
               </div>
             </div>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-brand"
+                  checked={search.remoteOnly}
+                  onChange={(event) => setSearch((current) => ({ ...current, remoteOnly: event.target.checked }))}
+                />
+                Remote only
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                Posted
+                <select
+                  value={search.postedWithin}
+                  onChange={(event) => setSearch((current) => ({ ...current, postedWithin: event.target.value as PostedWithin }))}
+                  className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                >
+                  {POSTED_WITHIN.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             {search.skills.length > 0 && (
               <p className="text-xs text-muted-foreground">
                 Ranked by these skills from your profile: {search.skills.join(", ")}
@@ -323,6 +358,35 @@ export function JobFinder({ onSaved }: { onSaved?: (job: JobRecord) => void }) {
               )}
             </div>
           </form>
+          {queries.length > 0 && (
+            <div className="mt-5 grid gap-2 border-t pt-4">
+              <p className="text-sm font-medium">Search on the big job sites yourself</p>
+              <p className="text-xs text-muted-foreground">
+                They don&apos;t let apps search them, so these open your search in a new tab, with your country, city, remote
+                and date choices. Found one you like? Copy its link into <span className="font-medium">Paste a job</span> on
+                Your jobs.
+              </p>
+              <ul className="grid gap-1.5">
+                {queries.map((query) => (
+                  <li key={query} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                    <span className="min-w-0 truncate text-muted-foreground">{query}:</span>
+                    {boardLinks(query, search.country, search.place, search).map((link) => (
+                      <a
+                        key={link.name}
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-medium underline-offset-4 hover:underline"
+                      >
+                        {link.name}
+                        <ExternalLink className="size-3" />
+                      </a>
+                    ))}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -416,6 +480,7 @@ export function JobFinder({ onSaved }: { onSaved?: (job: JobRecord) => void }) {
                         ))}
                         <span className="text-xs text-muted-foreground">
                           via{" "}
+                          {job.via && `${job.via}, found by `}
                           <a href={SOURCE_SITES[job.source]} target="_blank" rel="noopener noreferrer" className="underline-offset-4 hover:underline">
                             {job.source}
                           </a>
@@ -439,7 +504,7 @@ export function JobFinder({ onSaved }: { onSaved?: (job: JobRecord) => void }) {
                             Save it to check the fit, write a cover letter and track it. The original posting, where you
                             apply, is{" "}
                             <a href={job.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4 hover:text-foreground">
-                              on {job.source}
+                              on {job.via ?? job.source}
                             </a>
                             .
                           </p>

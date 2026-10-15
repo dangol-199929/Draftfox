@@ -2,6 +2,10 @@
 // profile. Only the search words (and country) are sent; your profile never leaves this computer.
 // - Himalayas (himalayas.app) and Jobicy (jobicy.com): remote jobs, no key needed.
 // - Adzuna (adzuna.com): jobs in many countries, with a free API key in ADZUNA_APP_ID and ADZUNA_APP_KEY.
+// - JSearch (on RapidAPI): jobs Google for Jobs found on LinkedIn, Indeed, Glassdoor and others, with a RapidAPI
+//   key in JSEARCH_API_KEY (free plan with a monthly limit).
+// - Jooble (jooble.org) and Careerjet (careerjet.com): job search engines, with free keys in JOOBLE_API_KEY and
+//   CAREERJET_API_KEY.
 // The boards ask that results credit them and link to the original posting, which the page does.
 // LinkedIn has no job search API for personal apps, so LinkedIn, Seek and Indeed are offered as links instead.
 import { randomUUID } from "node:crypto";
@@ -20,6 +24,8 @@ export type FoundJob = {
   // Source and the board's own id, so the same posting isn't listed twice.
   id: string;
   source: SourceName;
+  // For sources that collect jobs from other sites (JSearch): the site the posting is on, like "LinkedIn".
+  via?: string;
   title: string;
   company: string;
   location: string;
@@ -43,9 +49,10 @@ type Found = Omit<FoundJob, "matched" | "score">;
 
 // --- Sources ---
 
-async function getJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT), headers: { Accept: "application/json" } });
-  if (response.status === 429) throw new Error("too many searches; try again in a minute");
+async function getJson<T>(url: string, headers: Record<string, string> = {}): Promise<T> {
+  const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT), headers: { Accept: "application/json", ...headers } });
+  if (response.status === 429) throw new Error("too many searches, or this month's free searches are used up; try again later");
+  if (response.status === 401 || response.status === 403) throw new Error("rejected the API key; check it in .env");
   if (!response.ok) throw new Error(`returned ${response.status}`);
   return (await response.json()) as T;
 }
@@ -156,11 +163,142 @@ async function adzuna(query: string, countryCode: string, place: string): Promis
   }));
 }
 
+type JSearchJob = {
+  job_id: string;
+  job_title: string;
+  employer_name?: string;
+  job_publisher?: string;
+  job_apply_link?: string;
+  job_google_link?: string;
+  job_description?: string;
+  job_location?: string;
+  job_city?: string | null;
+  job_state?: string | null;
+  job_country?: string | null;
+  job_is_remote?: boolean | null;
+  job_posted_at_datetime_utc?: string | null;
+  job_min_salary?: number | null;
+  job_max_salary?: number | null;
+  job_salary_currency?: string | null;
+};
+
+export function jsearchConfigured(): boolean {
+  return Boolean(process.env.JSEARCH_API_KEY);
+}
+
+const JSEARCH_DATES: Record<string, string> = { "1": "today", "7": "week", "30": "month" };
+
+async function jsearch(query: string, input: SearchInput): Promise<Found[]> {
+  const where = [input.place.trim(), findCountry(input.country)?.name].filter(Boolean).join(", ");
+  const params = new URLSearchParams({ query: where ? `${query} in ${where}` : query, page: "1", num_pages: "1" });
+  if (input.country) params.set("country", input.country === "gb" ? "uk" : input.country);
+  if (input.postedWithin) params.set("date_posted", JSEARCH_DATES[input.postedWithin]);
+  if (input.remoteOnly) params.set("work_from_home", "true");
+  const data = await getJson<{ data?: JSearchJob[] }>(`https://jsearch.p.rapidapi.com/search?${params}`, {
+    "X-RapidAPI-Key": process.env.JSEARCH_API_KEY ?? "",
+    "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
+  });
+  return (data.data ?? []).map((job) => {
+    const place = job.job_location || [job.job_city, job.job_state, job.job_country].filter(Boolean).join(", ");
+    return {
+      id: `jsearch:${job.job_id}`,
+      source: "JSearch",
+      via: job.job_publisher || undefined,
+      title: job.job_title,
+      company: job.employer_name ?? "",
+      location: job.job_is_remote ? (place ? `Remote (${place})` : "Remote") : place,
+      url: job.job_apply_link || job.job_google_link || "",
+      description: htmlToText(job.job_description ?? ""),
+      postedAt: job.job_posted_at_datetime_utc ?? null,
+      salary: salaryText(job.job_min_salary, job.job_max_salary, job.job_salary_currency ?? undefined),
+    };
+  });
+}
+
+type JoobleJob = { id: number | string; title: string; company?: string; location?: string; snippet?: string; salary?: string; link: string; updated?: string; source?: string };
+
+export function joobleConfigured(): boolean {
+  return Boolean(process.env.JOOBLE_API_KEY);
+}
+
+async function jooble(query: string, input: SearchInput): Promise<Found[]> {
+  const where = input.remoteOnly ? "Remote" : [input.place.trim(), findCountry(input.country)?.name].filter(Boolean).join(", ");
+  const response = await fetch(`https://jooble.org/api/${encodeURIComponent(process.env.JOOBLE_API_KEY ?? "")}`, {
+    method: "POST",
+    signal: AbortSignal.timeout(TIMEOUT),
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ keywords: query, location: where, page: "1", ResultOnPage: "30" }),
+  });
+  if (response.status === 403 || response.status === 401) throw new Error("rejected the API key; check JOOBLE_API_KEY");
+  if (!response.ok) throw new Error(`returned ${response.status}`);
+  const data = (await response.json()) as { jobs?: JoobleJob[] };
+  return (data.jobs ?? []).map((job) => ({
+    id: `jooble:${job.id}`,
+    source: "Jooble",
+    title: htmlToText(job.title),
+    company: job.company ?? "",
+    location: job.location ?? "",
+    url: job.link,
+    // Jooble gives a short snippet; the full posting is on the job's page.
+    description: htmlToText(job.snippet ?? ""),
+    postedAt: job.updated && !Number.isNaN(Date.parse(job.updated)) ? new Date(job.updated).toISOString() : null,
+    salary: job.salary || null,
+  }));
+}
+
+type CareerjetJob = { title: string; company?: string; date?: string; description?: string; locations?: string; salary?: string; url: string };
+
+export function careerjetConfigured(): boolean {
+  return Boolean(process.env.CAREERJET_API_KEY);
+}
+
+// Careerjet's language and country for each country we search.
+const CAREERJET_LOCALES: Record<string, string> = {
+  au: "en_AU", nz: "en_NZ", gb: "en_GB", us: "en_US", ca: "en_CA", in: "en_IN", sg: "en_SG", de: "de_DE", nl: "nl_NL",
+  fr: "fr_FR", es: "es_ES", it: "it_IT", at: "de_AT", be: "fr_BE", ch: "de_CH", pl: "pl_PL", br: "pt_BR", mx: "es_MX", za: "en_ZA",
+};
+
+// Careerjet asks for the IP address and browser of the person searching, so it can tell searches from bots.
+export type Searcher = { ip: string; userAgent: string };
+
+async function careerjet(query: string, input: SearchInput, searcher: Searcher): Promise<Found[]> {
+  const params = new URLSearchParams({
+    keywords: input.remoteOnly ? `${query} remote` : query,
+    locale_code: CAREERJET_LOCALES[input.country] ?? "en_GB",
+    page_size: "30",
+    sort: input.postedWithin ? "date" : "relevance",
+    user_ip: searcher.ip,
+    user_agent: searcher.userAgent,
+  });
+  if (input.place.trim() && !input.remoteOnly) params.set("location", input.place.trim());
+  const data = await getJson<{ type?: string; message?: string; jobs?: CareerjetJob[] }>(
+    `https://search.api.careerjet.net/v4/query?${params}`,
+    { Authorization: `Basic ${Buffer.from(`${process.env.CAREERJET_API_KEY ?? ""}:`).toString("base64")}` },
+  );
+  // LOCATIONS means the city was ambiguous; there are no jobs to show for it.
+  if (data.type && data.type !== "JOBS" && data.type !== "LOCATIONS") throw new Error(data.message ?? "failed");
+  return (data.jobs ?? []).map((job) => ({
+    id: `careerjet:${job.url}`,
+    source: "Careerjet",
+    title: htmlToText(job.title),
+    company: job.company ?? "",
+    location: job.locations ?? "",
+    url: job.url,
+    description: htmlToText(job.description ?? ""),
+    postedAt: job.date && !Number.isNaN(Date.parse(job.date)) ? new Date(job.date).toISOString() : null,
+    salary: job.salary || null,
+  }));
+}
+
 // --- Search ---
 
 
 // Runs each search on each source at once. A source that fails is reported, not fatal.
-export async function searchJobs(input: SearchInput, profile: Profile | null): Promise<{ results: FoundJob[]; sources: SourceResult[] }> {
+export async function searchJobs(
+  input: SearchInput,
+  profile: Profile | null,
+  searcher: Searcher,
+): Promise<{ results: FoundJob[]; sources: SourceResult[] }> {
   const country = findCountry(input.country);
   const queries = input.queries.slice(0, MAX_QUERIES);
   const runners: { name: SourceName; skipped?: string; run: (query: string) => Promise<Found[]> }[] = [
@@ -170,6 +308,21 @@ export async function searchJobs(input: SearchInput, profile: Profile | null): P
       name: "Adzuna",
       skipped: !adzunaConfigured() ? "add a free Adzuna API key to search local jobs" : !country ? "pick a country to search local jobs" : undefined,
       run: (query) => adzuna(query, country!.code, input.place.trim()),
+    },
+    {
+      name: "JSearch",
+      skipped: !jsearchConfigured() ? "add a RapidAPI key for JSearch to include LinkedIn, Indeed and Glassdoor jobs" : undefined,
+      run: (query) => jsearch(query, input),
+    },
+    {
+      name: "Jooble",
+      skipped: !joobleConfigured() ? "add a free Jooble API key to search it" : undefined,
+      run: (query) => jooble(query, input),
+    },
+    {
+      name: "Careerjet",
+      skipped: !careerjetConfigured() ? "add a free Careerjet API key to search it" : !country ? "pick a country to search it" : undefined,
+      run: (query) => careerjet(query, input, searcher),
     },
   ];
 
@@ -191,7 +344,14 @@ export async function searchJobs(input: SearchInput, profile: Profile | null): P
   );
   sources.sort((a, b) => runners.findIndex((r) => r.name === a.name) - runners.findIndex((r) => r.name === b.name));
 
-  return { results: rank(dedupe(found), profile, queries, input.skills), sources };
+  return { results: rank(dedupe(found.filter((job) => fitsPrefs(job, input))), profile, queries, input.skills), sources };
+}
+
+// Remote only and posted within, for the sources that can't filter by them themselves.
+function fitsPrefs(job: Found, input: SearchInput): boolean {
+  if (input.remoteOnly && !/remote|anywhere|work from home|wfh/i.test(`${job.location} ${job.title}`)) return false;
+  if (input.postedWithin && job.postedAt && Date.now() - Date.parse(job.postedAt) > Number(input.postedWithin) * 86_400_000) return false;
+  return true;
 }
 
 function sourceError(reason: unknown): string {

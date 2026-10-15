@@ -1,7 +1,8 @@
 import { badRequest, readJsonObject } from "@/lib/api.ts";
 import { countryFromLocation, parseSearchInput } from "@/lib/job-links.ts";
 import { adzunaConfigured, markNew, searchJobs, suggestSearches } from "@/lib/job-search.ts";
-import { hasProfileContent, keywordCheck, keywordScore, profileText } from "@/lib/jobs.ts";
+import { keywordScore } from "@/lib/job-status.ts";
+import { hasProfileContent, keywordCheck, profileText } from "@/lib/jobs.ts";
 import { readProfile } from "@/lib/profile.ts";
 
 export const runtime = "nodejs";
@@ -17,7 +18,7 @@ export async function GET() {
 }
 
 // Body: { queries: string[] (1 to 3), country (a code from COUNTRIES, or "" for anywhere), place?, skills? (to rank
-// by), savedSearchId? }. Returns { results, sources }: postings (with keywords and a fit score) ranked by how well they match your profile, and how
+// by), remoteOnly?, postedWithin? ("1", "7" or "30" days), savedSearchId? }. Returns { results, sources }: postings (with keywords and a fit score) ranked by how well they match your profile, and how
 // each job board did. With savedSearchId, results that search hasn't shown before are marked isNew.
 export async function POST(request: Request) {
   const body = await readJsonObject(request);
@@ -26,7 +27,12 @@ export async function POST(request: Request) {
   if (typeof input === "string") return badRequest(input);
 
   const profile = await readProfile();
-  const { results: found, sources } = await searchJobs(input, profile);
+  // Careerjet asks who is searching: your browser, and your address as this app sees it.
+  const searcher = {
+    ip: request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "127.0.0.1",
+    userAgent: request.headers.get("user-agent") ?? "Draftfox",
+  };
+  const { results: found, sources } = await searchJobs(input, profile, searcher);
   // Which of each posting's keywords your profile mentions, for the list's fit score and the job's details.
   const results = found.map((job) => {
     const keywords = keywordCheck(job, profile);

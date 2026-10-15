@@ -108,6 +108,12 @@ The **Find jobs** tab on the Jobs page suggests job titles from your profile, se
 
 - [Himalayas](https://himalayas.app) and [Jobicy](https://jobicy.com): remote jobs, no setup.
 - [Adzuna](https://www.adzuna.com): jobs in Australia, the UK, the US and 16 other countries. Optional: get a free key at [developer.adzuna.com](https://developer.adzuna.com) and set `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`.
+- [JSearch](https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch): jobs Google for Jobs found on LinkedIn, Indeed, Glassdoor and other sites, each credited to the site it's on. Optional: sign up at RapidAPI, subscribe to JSearch's free plan (a limited number of searches a month) and set `JSEARCH_API_KEY`.
+- [Jooble](https://jooble.org) and [Careerjet](https://www.careerjet.com): job search engines covering many countries. Optional: get free keys at [jooble.org/api/about](https://jooble.org/api/about) and [careerjet.com/partners/api](https://www.careerjet.com/partners/api) and set `JOOBLE_API_KEY` and `CAREERJET_API_KEY`.
+
+**Remote only** and **Posted** (past 24 hours, week or month) narrow every source's results. Under the search, **Search on the big job sites yourself** opens the same search on LinkedIn, Indeed and (in Australia and New Zealand) SEEK in a new tab, since those sites don't let apps search them.
+
+**Paste a job** on Your jobs takes a job's link or its text. From a link, Draftfox reads that one page (most job sites describe the posting for search engines, and otherwise the local model picks out the details); from text, the model fills in the title, company and location. Check the details and save; the job opens in a drawer, ready for a cover letter. Sites that need you to sign in to see a job can't be read, so paste the text for those.
 
 Results are ranked by how many of your skills and titles they mention. Click a job to read its details, and **Save to my jobs** adds it to your list with its description. **Save this search** keeps it: run it again later and the jobs that are new since last time are marked. LinkedIn has no job search API for personal apps, and Draftfox doesn't scrape any site. Only the search words and country are sent to the job boards.
 
@@ -152,6 +158,9 @@ Copy `.env.example` to `.env` and fill in what you need. Everything is optional.
 | `LINKEDIN_CLIENT_SECRET` | none | Primary Client Secret of your LinkedIn app. Keep it secret. |
 | `LINKEDIN_REDIRECT_URI` | `http://localhost:3000/api/linkedin/callback` | Must match the redirect URL in your LinkedIn app |
 | `ADZUNA_APP_ID`, `ADZUNA_APP_KEY` | none | Free Adzuna API key, so Find jobs also searches local (not only remote) jobs |
+| `JSEARCH_API_KEY` | none | RapidAPI key for JSearch, so Find jobs includes jobs from LinkedIn, Indeed, Glassdoor and others |
+| `JOOBLE_API_KEY` | none | Free Jooble API key, so Find jobs also searches Jooble |
+| `CAREERJET_API_KEY` | none | Free Careerjet API key, so Find jobs also searches Careerjet |
 | `LINKEDIN_API_BASE` | `https://api.linkedin.com` | Only for tests: points posting at a fake LinkedIn server |
 
 `.env` is gitignored.

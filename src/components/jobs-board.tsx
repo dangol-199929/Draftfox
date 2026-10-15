@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { BadgeDollarSign, CalendarClock, CircleAlert, Download, Loader2, Plus, Search, X } from "lucide-react";
+import { BadgeDollarSign, CalendarClock, CircleAlert, ClipboardPaste, Download, Loader2, Plus, Search, X } from "lucide-react";
 import { formatDay, JobStatusBadge, MatchBadge, STATUS_LABELS } from "@/components/job-badges";
+import { JobDrawer } from "@/components/job-drawer";
 import { JobFinder } from "@/components/job-finder";
 import { OpenToWork } from "@/components/open-to-work";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -25,11 +25,22 @@ const FILTERS: { value: Filter; label: string }[] = [
 ];
 
 const EMPTY_FORM = { title: "", company: "", location: "", url: "", description: "" };
+// What Paste a job read besides the form's fields, saved with the job.
+type Extra = { salary: string; postedAt: string | null; source: string };
+const NO_EXTRA: Extra = { salary: "", postedAt: null, source: "" };
+
+// "https://www.seek.com.au/job/123" -> "seek.com.au".
+function siteName(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
 
 export type JobsTab = "mine" | "find";
 
 export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
-  const router = useRouter();
   const [tab, setTab] = useState<JobsTab>(initialTab);
   const [jobs, setJobs] = useState<JobRecord[] | null>(null);
   const [error, setError] = useState("");
@@ -41,15 +52,25 @@ export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
   const [formError, setFormError] = useState("");
   // The saved job a new one looks like, so you can open it or save the new one anyway.
   const [duplicateId, setDuplicateId] = useState<string | null>(null);
+  // Paste a job: a link or the posting's text, read into the form below for you to check.
+  const [pasted, setPasted] = useState("");
+  const [reading, setReading] = useState(false);
+  const [extra, setExtra] = useState<Extra>(NO_EXTRA);
+  // The saved job open in the drawer on the right.
+  const [drawerId, setDrawerId] = useState<string | null>(null);
 
-  useEffect(() => {
+  function loadJobs(openAdding = false) {
     fetch("/api/jobs")
       .then((response) => response.json() as Promise<{ jobs: JobRecord[] }>)
       .then(({ jobs }) => {
         setJobs(jobs);
-        if (jobs.length === 0) setAdding(true);
+        if (openAdding && jobs.length === 0) setAdding(true);
       })
       .catch(() => setError("Couldn't load your jobs."));
+  }
+
+  useEffect(() => {
+    loadJobs(true);
     fetch("/api/profile")
       .then((response) => response.json() as Promise<{ profile: Profile; exists: boolean }>)
       .then(({ profile, exists }) =>
@@ -67,15 +88,45 @@ export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
       const response = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, allowDuplicate }),
+        body: JSON.stringify({ ...form, ...extra, source: extra.source || siteName(form.url), allowDuplicate }),
       });
       const data = (await response.json()) as { job?: JobRecord; error?: string; duplicateId?: string };
       if (data.duplicateId) setDuplicateId(data.duplicateId);
       if (!response.ok || !data.job) throw new Error(data.error ?? "Couldn't save the job.");
-      router.push(`/jobs/${data.job.id}`);
+      // Open it in the drawer to prepare the application, and clear the form for the next one.
+      const saved = data.job;
+      setJobs((current) => [saved, ...(current ?? [])]);
+      setDrawerId(saved.id);
+      setForm(EMPTY_FORM);
+      setExtra(NO_EXTRA);
+      setPasted("");
+      setAdding(false);
     } catch (err) {
       setFormError((err as Error).message);
+    } finally {
       setSaving(false);
+    }
+  }
+
+  async function readPasted() {
+    setReading(true);
+    setFormError("");
+    setDuplicateId(null);
+    try {
+      const response = await fetch("/api/jobs/read", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: pasted }),
+      });
+      const data = (await response.json()) as { job?: typeof EMPTY_FORM & { salary: string; postedAt: string | null }; error?: string };
+      if (!response.ok || !data.job) throw new Error(data.error ?? "Couldn't read that job.");
+      const { salary, postedAt, ...fields } = data.job;
+      setForm({ title: fields.title, company: fields.company, location: fields.location, url: fields.url, description: fields.description });
+      setExtra({ salary, postedAt, source: siteName(fields.url) });
+    } catch (err) {
+      setFormError((err as Error).message);
+    } finally {
+      setReading(false);
     }
   }
 
@@ -139,9 +190,10 @@ export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
       {adding ? (
         <Card>
           <CardHeader>
-            <CardTitle>Add a job</CardTitle>
+            <CardTitle>Paste a job</CardTitle>
             <CardDescription>
-              Paste the details of a job you found, or{" "}
+              Paste a job&apos;s link (LinkedIn, SEEK, Indeed, a company&apos;s careers page…) or its text, check the details,
+              and save it. Or{" "}
               <button type="button" className="text-foreground underline underline-offset-4" onClick={() => showTab("find")}>
                 find jobs that match your profile
               </button>
@@ -155,8 +207,29 @@ export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
               </CardAction>
             )}
           </CardHeader>
-          <CardContent>
-            <form onSubmit={add} className="grid gap-4">
+          <CardContent className="grid gap-5">
+            <div className="grid gap-2">
+              <Label htmlFor="job-paste">Link or job text</Label>
+              <Textarea
+                id="job-paste"
+                rows={2}
+                maxLength={50_000}
+                value={pasted}
+                onChange={(event) => setPasted(event.target.value)}
+                placeholder="https://www.linkedin.com/jobs/view/… or paste the whole posting"
+                className="max-h-48"
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="outline" disabled={reading || !pasted.trim()} onClick={() => void readPasted()}>
+                  {reading ? <Loader2 className="animate-spin" /> : <ClipboardPaste />}
+                  {reading ? "Reading…" : "Fill in the details"}
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Only that one page is read. If a site needs you to sign in, paste the text instead.
+                </span>
+              </div>
+            </div>
+            <form onSubmit={add} className="grid gap-4 border-t pt-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-2">
                   <Label htmlFor="job-title">Job title</Label>
@@ -192,9 +265,9 @@ export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
                   {formError}
                   {duplicateId && (
                     <>
-                      <Link href={`/jobs/${duplicateId}`} className="text-foreground underline underline-offset-4">
+                      <button type="button" className="text-foreground underline underline-offset-4" onClick={() => setDrawerId(duplicateId)}>
                         Open it
-                      </Link>
+                      </button>
                       <button type="button" className="text-foreground underline underline-offset-4" onClick={() => void add(undefined, true)}>
                         Save it again anyway
                       </button>
@@ -202,6 +275,7 @@ export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
                   )}
                 </p>
               )}
+              {extra.salary && <p className="text-xs text-muted-foreground">Salary listed: {extra.salary}</p>}
               <Button type="submit" className="justify-self-start" disabled={saving || !form.title.trim()}>
                 {saving ? <Loader2 className="animate-spin" /> : <Plus />}
                 Save job
@@ -222,7 +296,7 @@ export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
             {!adding && (
               <Button size="sm" onClick={() => setAdding(true)}>
                 <Plus />
-                Add a job
+                Paste a job
               </Button>
             )}
           </CardAction>
@@ -257,7 +331,7 @@ export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
           )}
           {jobs && shown.length === 0 && (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              {jobs.length === 0 ? "No jobs yet. Add one you found above." : "Nothing here."}
+              {jobs.length === 0 ? "No jobs yet. Paste one you found above, or find jobs." : "Nothing here."}
             </p>
           )}
           {shown.length > 0 && (
@@ -312,6 +386,14 @@ export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
       <OpenToWork jobs={jobs ?? []} />
         </>
       )}
+
+      <JobDrawer
+        id={drawerId}
+        onClose={() => {
+          setDrawerId(null);
+          loadJobs();
+        }}
+      />
     </div>
   );
 }

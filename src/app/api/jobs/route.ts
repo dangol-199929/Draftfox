@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { badRequest, readJsonObject } from "@/lib/api.ts";
 import { insertJob, listJobs, logEvent, type JobRecord } from "@/lib/db.ts";
-import { findDuplicate, keywordCheck, keywordScore, validateJobFields } from "@/lib/jobs.ts";
+import { findDuplicate, keywordCheck, validateJobFields } from "@/lib/jobs.ts";
+import { keywordScore } from "@/lib/job-status.ts";
 import { readProfile } from "@/lib/profile.ts";
 
 export const runtime = "nodejs";
