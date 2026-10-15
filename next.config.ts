@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: "/posts", destination: "/", permanent: false },
+      { source: "/posts/:id", destination: "/?post=:id", permanent: false },
       { source: "/prompt", destination: "/settings", permanent: false },
       { source: "/linkedin", destination: "/profile", permanent: false },
     ];

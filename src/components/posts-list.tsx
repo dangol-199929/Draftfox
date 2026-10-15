@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Bot, Images, Loader2, Plus } from "lucide-react";
+import { Bot, Images, Loader2, PenLine, Plus } from "lucide-react";
 import { formatWhen, StatusBadge } from "@/components/post-editor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from "@/components/ui/card";
@@ -26,8 +24,20 @@ function matches(post: PostRecord, filter: Filter) {
   return post.status === filter;
 }
 
-export function PostsList() {
-  const router = useRouter();
+// Your posts, newest first. Opening one (or a new one) is up to the page, which shows it in the editor.
+export function PostsList({
+  onOpen,
+  refreshKey,
+  updated,
+  activeId,
+}: {
+  onOpen: (id: string) => void;
+  // Change it to load the list again.
+  refreshKey: number;
+  // The post open in the editor, as last saved, so the list shows changes without reloading.
+  updated: PostRecord | null;
+  activeId: string | null;
+}) {
   const [posts, setPosts] = useState<PostRecord[] | null>(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -38,16 +48,26 @@ export function PostsList() {
       .then((response) => response.json() as Promise<{ posts: PostRecord[] }>)
       .then(({ posts }) => setPosts(posts))
       .catch(() => setError("Couldn't load your posts."));
-  }, []);
+  }, [refreshKey]);
+
+  useEffect(() => {
+    if (!updated) return;
+    setPosts((current) =>
+      current && current.some((post) => post.id === updated.id)
+        ? current.map((post) => (post.id === updated.id ? updated : post))
+        : current && [updated, ...current],
+    );
+  }, [updated]);
 
   async function create() {
     setCreating(true);
     try {
       const response = await fetch("/api/posts", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const { post } = (await response.json()) as { post: PostRecord };
-      router.push(`/posts/${post.id}`);
+      onOpen(post.id);
     } catch {
       setError("Couldn't create a post.");
+    } finally {
       setCreating(false);
     }
   }
@@ -61,9 +81,9 @@ export function PostsList() {
       <CardHeader>
         <CardTitle>Your posts</CardTitle>
         <CardAction>
-          <Button size="sm" disabled={creating} onClick={create}>
+          <Button size="sm" variant="outline" disabled={creating} onClick={create}>
             {creating ? <Loader2 className="animate-spin" /> : <Plus />}
-            New post
+            Write my own
           </Button>
         </CardAction>
       </CardHeader>
@@ -91,24 +111,45 @@ export function PostsList() {
 
         {error && <p className="text-sm text-destructive">{error}</p>}
         {!posts && !error && (
-          <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" /> Loading…
-          </p>
+          <ul className="grid gap-3 py-1" aria-label="Loading posts">
+            {[0, 1, 2].map((index) => (
+              <li key={index} className="flex items-center gap-3">
+                <span className="size-12 animate-pulse rounded-md bg-muted" />
+                <span className="grid flex-1 gap-2">
+                  <span className="h-3 w-3/4 animate-pulse rounded bg-muted" />
+                  <span className="h-2.5 w-1/3 animate-pulse rounded bg-muted" />
+                </span>
+              </li>
+            ))}
+          </ul>
         )}
         {posts && shown.length === 0 && (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            {posts.length === 0
-              ? "No posts yet. Start one here, or open a generated post in the editor from the Generate page."
-              : "Nothing here."}
-          </p>
+          <div className="grid justify-items-center gap-2 py-10 text-center">
+            <span className="grid size-10 place-items-center rounded-full bg-brand-soft">
+              <PenLine className="size-4 text-brand" />
+            </span>
+            <p className="text-sm font-medium">{posts.length === 0 ? "No posts yet" : "Nothing here"}</p>
+            <p className="max-w-xs text-sm text-muted-foreground">
+              {posts.length === 0
+                ? "Give the model a topic above, or write your own. Drafts are saved here as you go."
+                : filter === "scheduled"
+                  ? "Schedule a draft from the editor and it shows up here."
+                  : "Try another filter."}
+            </p>
+          </div>
         )}
         {shown.length > 0 && (
           <ul className="grid divide-y">
             {shown.map((post) => (
               <li key={post.id}>
-                <Link
-                  href={`/posts/${post.id}`}
-                  className="-mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-muted/60"
+                <button
+                  type="button"
+                  onClick={() => onOpen(post.id)}
+                  aria-current={post.id === activeId ? "true" : undefined}
+                  className={cn(
+                    "-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-md px-2 py-2.5 text-left transition-colors hover:bg-muted/60",
+                    post.id === activeId && "bg-muted/60",
+                  )}
                 >
                   {post.images[0] ? (
                     // eslint-disable-next-line @next/next/no-img-element -- local images served by the app
@@ -139,7 +180,7 @@ export function PostsList() {
                     </span>
                   </span>
                   <StatusBadge post={post} />
-                </Link>
+                </button>
               </li>
             ))}
           </ul>

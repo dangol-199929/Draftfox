@@ -1,22 +1,26 @@
 import type { Metadata } from "next";
-import { AutopilotPanel } from "@/components/autopilot-panel";
-import { GenerateForm } from "@/components/generate-form";
 import { PageHeader } from "@/components/page-header";
-import { PostsList } from "@/components/posts-list";
+import { WriteWorkspace } from "@/components/write-workspace";
 
 // The layout's title template only applies to nested routes, so the home page spells its title out.
 export const metadata: Metadata = { title: { absolute: "Write · Draftfox" } };
 
-export default function WritePage() {
+export default async function WritePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const { post, tab } = await searchParams;
   return (
     <div className="grid gap-6">
       <PageHeader
         title="Write"
-        description="Write a LinkedIn post from your topic and experience, then edit, add images and post or schedule it. Nothing is posted unless you choose to."
+        description="Write LinkedIn posts from your topic and experience, add images, and post or schedule them. Nothing is posted unless you choose to."
       />
-      <GenerateForm />
-      <PostsList />
-      <AutopilotPanel />
+      <WriteWorkspace
+        initialPost={typeof post === "string" ? post : null}
+        initialTab={tab === "schedule" ? "schedule" : "posts"}
+      />
     </div>
   );
 }

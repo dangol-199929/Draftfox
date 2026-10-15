@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Bot, Loader2, Play, Save, TriangleAlert } from "lucide-react";
 import { formatWhen } from "@/components/post-editor";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -40,8 +39,7 @@ function fromForm(form: Form): AutopilotSettings {
 }
 
 // Settings for automatic posting: how often, at what time, about what, and whether to post or ask first.
-export function AutopilotPanel() {
-  const router = useRouter();
+export function AutopilotPanel({ onOpen }: { onOpen: (postId: string) => void }) {
   const [form, setForm] = useState<Form | null>(null);
   const [saved, setSaved] = useState<string>("");
   const [state, setState] = useState<AutopilotState | null>(null);
@@ -102,7 +100,7 @@ export function AutopilotPanel() {
       const data = (await response.json()) as { result?: string; state?: AutopilotState; error?: string; post?: { id: string } };
       if (data.state) setState(data.state);
       if (!response.ok) throw new Error(data.error ?? data.result ?? `Request failed with status ${response.status}.`);
-      if (data.post) router.push(`/posts/${data.post.id}`);
+      if (data.post) onOpen(data.post.id);
       else setMessage(data.result ?? "");
     } catch (err) {
       setError((err as Error).message);

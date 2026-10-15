@@ -45,7 +45,7 @@ export function OpenToWork({ jobs }: { jobs: JobRecord[] }) {
       });
       const data = (await response.json()) as { post?: PostRecord; error?: string };
       if (!response.ok || !data.post) throw new Error(data.error ?? "Couldn't write the post.");
-      router.push(`/posts/${data.post.id}`);
+      router.push(`/?post=${data.post.id}`);
     } catch (err) {
       setError((err as Error).message);
       setWriting(false);

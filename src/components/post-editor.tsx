@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
@@ -13,10 +12,14 @@ import {
   ExternalLink,
   Loader2,
   Send,
+  Sparkles,
+  Square,
   Trash2,
+  Undo2,
   Upload,
   X,
 } from "lucide-react";
+import { foldIndex, LinkedInPreview, type PreviewAuthor } from "@/components/linkedin-preview";
 import { CardMaker } from "@/components/card-maker";
 import { ImageGenerator } from "@/components/image-generator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -31,19 +34,30 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { PostImage, PostRecord } from "@/lib/db.ts";
 import type { LinkedInStatus } from "@/lib/linkedin.ts";
+import type { Profile } from "@/lib/profile.ts";
 
 const MAX_LENGTH = 3000;
 const MAX_IMAGES = 20;
 const SAVE_DELAY = 600;
 
 type Draft = Pick<PostRecord, "text" | "images" | "visibility">;
+
+// Text being written into this post by the model, from the Write page.
+export type PostStream = { text: string; running: boolean };
+
+const REWRITES = [
+  { action: "shorter", label: "Shorter" },
+  { action: "hook", label: "Punchier hook" },
+  { action: "personal", label: "More personal" },
+  { action: "grammar", label: "Fix grammar" },
+] as const;
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -56,8 +70,24 @@ function json(method: string, body: unknown): RequestInit {
   return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
 
-export function PostEditor({ id }: { id: string }) {
-  const router = useRouter();
+export function PostEditor({
+  id,
+  stream = null,
+  onStop,
+  onDeleted,
+  onOpen,
+  onChange,
+}: {
+  id: string;
+  stream?: PostStream | null;
+  // Stops the model writing into this post.
+  onStop?: () => void;
+  onDeleted: () => void;
+  // Opens another post (a copy of this one) in the editor.
+  onOpen: (id: string) => void;
+  // After every save or status change, so a list can show it.
+  onChange?: (post: PostRecord) => void;
+}) {
   const [post, setPost] = useState<PostRecord | null>(null);
   const [loadError, setLoadError] = useState("");
   const [draft, setDraft] = useState<Draft>({ text: "", images: [], visibility: "PUBLIC" });
@@ -71,6 +101,12 @@ export function PostEditor({ id }: { id: string }) {
   const [actionError, setActionError] = useState("");
   const [when, setWhen] = useState(defaultScheduleTime);
   const [maker, setMaker] = useState<"card" | "picture">("card");
+  const [author, setAuthor] = useState<PreviewAuthor>({ name: "", headline: "" });
+  const [rewriting, setRewriting] = useState<string | null>(null);
+  const [rewriteError, setRewriteError] = useState("");
+  const [undo, setUndo] = useState<string[]>([]);
+  const [copied, setCopied] = useState(false);
+  const rewriteAbort = useRef<AbortController | null>(null);
   const lastSaved = useRef<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -83,10 +119,32 @@ export function PostEditor({ id }: { id: string }) {
         if (post.scheduledAt) setWhen(toLocalInput(post.scheduledAt));
       })
       .catch((error: Error) => setLoadError(error.message));
-    request<LinkedInStatus>("/api/linkedin/status")
-      .then(setLinkedIn)
-      .catch(() => setLinkedIn(null));
+    Promise.all([
+      request<LinkedInStatus>("/api/linkedin/status").catch(() => null),
+      request<{ profile: Profile }>("/api/profile").catch(() => null),
+    ]).then(([status, local]) => {
+      setLinkedIn(status);
+      setAuthor({
+        name: local?.profile.name || status?.profile?.name || "",
+        headline: local?.profile.headline ?? "",
+        picture: status?.profile?.picture,
+      });
+    });
+    return () => rewriteAbort.current?.abort();
   }, [id]);
+
+  // While the model writes this post, its text follows the stream (and is saved as it goes).
+  const loaded = post !== null;
+  useEffect(() => {
+    if (stream && loaded) setDraft((current) => ({ ...current, text: stream.running ? stream.text : stream.text.trim() }));
+  }, [stream, loaded]);
+  const writing = Boolean(stream?.running) || rewriting !== null;
+
+  useEffect(() => {
+    if (post) onChange?.(post);
+    // Only when the server's copy changes, not when the callback does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [post]);
 
   const editable = post !== null && ["draft", "scheduled", "failed"].includes(post.status);
   const draftJson = JSON.stringify(draft);
@@ -163,6 +221,57 @@ export function PostEditor({ id }: { id: string }) {
     });
   }
 
+  // Rewrites the text with the model, streaming it in. The text before is kept for Undo.
+  async function rewrite(action: (typeof REWRITES)[number]["action"]) {
+    const before = draft.text;
+    const controller = new AbortController();
+    rewriteAbort.current = controller;
+    setRewriting(action);
+    setRewriteError("");
+    try {
+      const response = await fetch("/api/rewrite", { ...json("POST", { text: before, action }), signal: controller.signal });
+      if (!response.ok || !response.body) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? `Request failed with status ${response.status}.`);
+      }
+      setUndo((stack) => [...stack.slice(-19), before]);
+      let text = "";
+      const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += value;
+        setDraft((current) => ({ ...current, text }));
+      }
+      setDraft((current) => ({ ...current, text: text.trim() || before }));
+    } catch (error) {
+      if (controller.signal.aborted) {
+        // Stopped: keep what was written so far; Undo brings the old text back.
+      } else {
+        setDraft((current) => ({ ...current, text: before }));
+        setRewriteError((error as Error).message);
+      }
+    } finally {
+      if (rewriteAbort.current === controller) rewriteAbort.current = null;
+      setRewriting(null);
+    }
+  }
+
+  async function copy() {
+    await navigator.clipboard.writeText(draft.text.trim());
+    // For the Reports page; a failed log doesn't matter here.
+    fetch("/api/events", json("POST", { type: "draft_copied", characters: draft.text.trim().length })).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function undoRewrite() {
+    const previous = undo.at(-1);
+    if (previous === undefined) return;
+    setUndo((stack) => stack.slice(0, -1));
+    setDraft((current) => ({ ...current, text: previous }));
+  }
+
   async function act(kind: typeof busy, work: () => Promise<void>) {
     setBusy(kind);
     setActionError("");
@@ -202,7 +311,7 @@ export function PostEditor({ id }: { id: string }) {
       if (!window.confirm("Delete this draft and its images? This can't be undone.")) return;
       lastSaved.current = draftJson; // nothing left to save
       await request(`/api/posts/${id}`, { method: "DELETE" });
-      router.push("/");
+      onDeleted();
     });
 
   const unpublish = () =>
@@ -215,7 +324,7 @@ export function PostEditor({ id }: { id: string }) {
   const duplicate = () =>
     act("publishing", async () => {
       const { post: created } = await request<{ post: PostRecord }>("/api/posts", json("POST", { text: draft.text }));
-      router.push(`/posts/${created.id}`);
+      onOpen(created.id);
     });
 
   if (loadError) {
@@ -223,12 +332,7 @@ export function PostEditor({ id }: { id: string }) {
       <Alert variant="destructive">
         <CircleAlert />
         <AlertTitle>Couldn&apos;t open the post</AlertTitle>
-        <AlertDescription>
-          <p>{loadError}</p>
-          <Link href="/" className="underline underline-offset-2">
-            Back to posts
-          </Link>
-        </AlertDescription>
+        <AlertDescription>{loadError}</AlertDescription>
       </Alert>
     );
   }
@@ -243,31 +347,96 @@ export function PostEditor({ id }: { id: string }) {
   const text = draft.text.trim();
   const tooLong = text.length > MAX_LENGTH;
   const canPost = linkedIn !== null && linkedIn.connected && !linkedIn.expired && linkedIn.canPost;
-  const ready = editable && text !== "" && !tooLong;
+  const ready = editable && text !== "" && !tooLong && !writing;
+  const fold = foldIndex(text);
 
   return (
-    <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_18rem] md:items-start">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
       <div className="grid gap-4">
         <Card>
           <CardHeader>
-            <CardTitle>Post</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              Post
+              {writing && (
+                <span className="inline-flex items-center gap-1.5 text-xs font-normal text-muted-foreground">
+                  <Loader2 className="size-3 animate-spin" />
+                  {stream?.running ? (stream.text ? "Writing…" : "Starting the model…") : "Rewriting…"}
+                </span>
+              )}
+            </CardTitle>
             <CardDescription>
               {editable ? <SaveStatus state={saving} error={saveError} /> : "This post is on LinkedIn, so it can't be edited here."}
             </CardDescription>
+            {writing && (
+              <CardAction>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => (stream?.running ? onStop?.() : rewriteAbort.current?.abort())}
+                >
+                  <Square />
+                  Stop
+                </Button>
+              </CardAction>
+            )}
           </CardHeader>
           <CardContent className="grid gap-2">
-            <Textarea
-              aria-label="Post text"
-              className="min-h-72 leading-relaxed"
-              placeholder="Write your post…"
-              value={draft.text}
-              readOnly={!editable}
-              onChange={(event) => setDraft((current) => ({ ...current, text: event.target.value }))}
-            />
-            <p className={`text-xs ${tooLong ? "text-destructive" : "text-muted-foreground"}`}>
-              {text.length.toLocaleString("en")} / {MAX_LENGTH.toLocaleString("en")} characters
-              {tooLong && " (too long for LinkedIn)"}
-            </p>
+            {stream?.running && !stream.text ? (
+              <div className="grid min-h-72 content-start gap-2.5 rounded-lg border p-3" aria-label="Writing your post">
+                {[92, 100, 85, 0, 96, 78, 100, 64].map((width, index) =>
+                  width ? (
+                    <div key={index} className="h-3 animate-pulse rounded bg-muted" style={{ width: `${width}%` }} />
+                  ) : (
+                    <div key={index} className="h-2" />
+                  ),
+                )}
+              </div>
+            ) : (
+              <Textarea
+                aria-label="Post text"
+                className="min-h-72 leading-relaxed"
+                placeholder="Write your post…"
+                value={draft.text}
+                readOnly={!editable || writing}
+                onChange={(event) => setDraft((current) => ({ ...current, text: event.target.value }))}
+              />
+            )}
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+              <p className={`text-xs ${tooLong ? "text-destructive" : "text-muted-foreground"}`}>
+                {text.length.toLocaleString("en")} / {MAX_LENGTH.toLocaleString("en")} characters
+                {tooLong && " (too long for LinkedIn)"}
+                {fold !== null && !tooLong && ` · "see more" after ${fold} characters`}
+              </p>
+              <Button variant="ghost" size="xs" disabled={!text || writing} onClick={copy}>
+                {copied ? <Check /> : <Copy />}
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+            {editable && (
+              <div className="flex flex-wrap items-center gap-1.5 border-t pt-3">
+                <Sparkles className="size-3.5 text-brand" aria-hidden />
+                <span className="sr-only">Quick rewrites:</span>
+                {REWRITES.map((option) => (
+                  <Button
+                    key={option.action}
+                    variant="outline"
+                    size="xs"
+                    disabled={writing || !text}
+                    onClick={() => rewrite(option.action)}
+                  >
+                    {rewriting === option.action && <Loader2 className="animate-spin" />}
+                    {option.label}
+                  </Button>
+                ))}
+                {undo.length > 0 && (
+                  <Button variant="ghost" size="xs" disabled={writing} onClick={undoRewrite}>
+                    <Undo2 />
+                    Undo
+                  </Button>
+                )}
+              </div>
+            )}
+            {rewriteError && <p className="text-sm text-destructive">{rewriteError}</p>}
           </CardContent>
         </Card>
 
@@ -393,7 +562,11 @@ export function PostEditor({ id }: { id: string }) {
         </Card>
       </div>
 
-      <div className="grid gap-4 md:sticky md:top-4">
+      <div className="grid gap-4 lg:sticky lg:top-0">
+        <div className="grid gap-2">
+          <p className="text-sm font-medium">Preview</p>
+          <LinkedInPreview text={draft.text} images={draft.images} author={author} visibility={draft.visibility} />
+        </div>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

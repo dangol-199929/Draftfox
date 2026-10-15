@@ -6,16 +6,17 @@ import {
   startGeneration,
   stopGeneration,
 } from "@/lib/generation.ts";
+import { getPost } from "@/lib/db.ts";
 import type { PostInput } from "@/lib/prompts.ts";
 
 export const runtime = "nodejs";
 
-const FIELDS = ["topic", "experience", "audience", "tone", "length"];
+const FIELDS = ["topic", "experience", "audience", "tone", "length", "postId"];
 const LENGTHS = ["short", "medium", "long"];
 
 const STREAM_HEADERS = { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-cache" };
 
-// Starts a generation on the server and streams its text. The generation keeps going if the page goes away;
+// Starts a generation on the server and streams its text. With a postId, the finished text is saved into that draft. The generation keeps going if the page goes away;
 // its id is in the X-Generation-Id header so the page can reconnect with GET ?follow=<id>.
 export async function POST(request: Request) {
   let body: unknown;
@@ -29,7 +30,8 @@ export async function POST(request: Request) {
   if (typeof result === "string") return badRequest(result);
 
   // Wait for the first chunk so Ollama errors still come back as JSON with a 503.
-  const job = startGeneration(result);
+  const { postId, ...input } = result;
+  const job = startGeneration(input, postId ?? null);
   await job.started;
   const state = snapshot(job);
   if (state.status === "failed" && !state.text) {
@@ -57,7 +59,7 @@ export async function DELETE() {
 }
 
 // Returns the cleaned input, or an error message naming the bad field.
-function parseInput(body: unknown): PostInput | string {
+function parseInput(body: unknown): (PostInput & { postId?: string }) | string {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     return "Request body must be a JSON object.";
   }
@@ -82,7 +84,11 @@ function parseInput(body: unknown): PostInput | string {
     return `"length" must be one of: ${LENGTHS.join(", ")}.`;
   }
 
+  const postId = value("postId");
+  if (postId && !getPost(postId)) return "That draft doesn't exist.";
+
   return {
+    postId,
     topic,
     experience: value("experience"),
     audience: value("audience"),

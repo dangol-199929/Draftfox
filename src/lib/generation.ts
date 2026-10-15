@@ -1,7 +1,7 @@
 // Server-only: runs one post generation at a time on the server, independent of any open page.
 // Leaving or reloading the Generate page doesn't stop it; the page reconnects and picks up the text.
 import { randomUUID } from "node:crypto";
-import { latestGeneration, saveGeneration, type GenerationRow } from "./db.ts";
+import { getPost, latestGeneration, saveGeneration, updatePost, type GenerationRow } from "./db.ts";
 import { OLLAMA_MODEL, OllamaError } from "./ollama.ts";
 import { streamLinkedInPost } from "./post.ts";
 import type { PostInput } from "./prompts.ts";
@@ -22,6 +22,8 @@ export type GenerationSnapshot = {
 type Job = {
   id: string;
   input: PostInput;
+  // The draft the text goes into when the job ends, so it's kept even if no page is open.
+  postId: string | null;
   text: string;
   status: GenerationStatus;
   error: string | null;
@@ -59,13 +61,14 @@ export function currentGeneration(): GenerationSnapshot | null {
 }
 
 // Starts a new generation, stopping one that's still running.
-export function startGeneration(input: PostInput): Job {
+export function startGeneration(input: PostInput, postId: string | null = null): Job {
   globalForJob.generationJob?.controller.abort();
 
   let markStarted = () => {};
   const job: Job = {
     id: randomUUID(),
     input,
+    postId,
     text: "",
     status: "running",
     error: null,
@@ -160,8 +163,23 @@ async function run(job: Job, markStarted: () => void) {
   } finally {
     job.seconds = (Date.now() - start) / 1000;
     save(job);
+    fillPost(job);
     markStarted();
     notify(job);
+  }
+}
+
+export const NEED_MORE_CONTEXT = "NEED MORE CONTEXT:";
+
+// Puts the finished (or stopped) text into its draft, unless the model asked questions instead
+// or the draft was already edited into something else (posted, scheduled, deleted).
+function fillPost(job: Job) {
+  const text = job.text.trim();
+  if (!job.postId || !text || text.startsWith(NEED_MORE_CONTEXT)) return;
+  try {
+    if (getPost(job.postId)?.status === "draft") updatePost(job.postId, { text }, "draft");
+  } catch (error) {
+    console.error("Could not save the generated text into its draft:", error);
   }
 }
 
