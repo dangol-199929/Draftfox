@@ -109,7 +109,8 @@ The **Find jobs** tab on the Jobs page suggests job titles from your profile, se
 - [Himalayas](https://himalayas.app) and [Jobicy](https://jobicy.com): remote jobs, no setup.
 - [Adzuna](https://www.adzuna.com): jobs in Australia, the UK, the US and 16 other countries. Optional: get a free key at [developer.adzuna.com](https://developer.adzuna.com) and set `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`.
 - [JSearch](https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch): jobs Google for Jobs found on LinkedIn, Indeed, Glassdoor and other sites, each credited to the site it's on. Optional: sign up at RapidAPI, subscribe to JSearch's free plan (a limited number of searches a month) and set `JSEARCH_API_KEY`.
-- [Jooble](https://jooble.org) and [Careerjet](https://www.careerjet.com): job search engines covering many countries. Optional: get free keys at [jooble.org/api/about](https://jooble.org/api/about) and [careerjet.com/partners/api](https://www.careerjet.com/partners/api) and set `JOOBLE_API_KEY` and `CAREERJET_API_KEY`.
+- [Jooble](https://jooble.org): a job search engine covering many countries. Optional: get a free key at [jooble.org/api/about](https://jooble.org/api/about) and set `JOOBLE_API_KEY`.
+- [Careerjet](https://www.careerjet.com) is built in but off: it only answers searches from internet addresses registered in your Careerjet account, which suits a hosted site rather than an app on your computer. To try it, set `CAREERJET_ENABLED=1` and `CAREERJET_API_KEY`, and register your address with Careerjet.
 
 **Remote only** and **Posted** (past 24 hours, week or month) narrow every source's results. Under the search, **Search on the big job sites yourself** opens the same search on LinkedIn, Indeed and (in Australia and New Zealand) SEEK in a new tab, since those sites don't let apps search them.
 
@@ -160,7 +161,7 @@ Copy `.env.example` to `.env` and fill in what you need. Everything is optional.
 | `ADZUNA_APP_ID`, `ADZUNA_APP_KEY` | none | Free Adzuna API key, so Find jobs also searches local (not only remote) jobs |
 | `JSEARCH_API_KEY` | none | RapidAPI key for JSearch, so Find jobs includes jobs from LinkedIn, Indeed, Glassdoor and others |
 | `JOOBLE_API_KEY` | none | Free Jooble API key, so Find jobs also searches Jooble |
-| `CAREERJET_API_KEY` | none | Free Careerjet API key, so Find jobs also searches Careerjet |
+| `CAREERJET_ENABLED`, `CAREERJET_API_KEY` | off | Careerjet search; needs your internet address registered with Careerjet, so it's for hosted setups |
 | `LINKEDIN_API_BASE` | `https://api.linkedin.com` | Only for tests: points posting at a fake LinkedIn server |
 
 `.env` is gitignored.

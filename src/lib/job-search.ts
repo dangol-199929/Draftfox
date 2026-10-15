@@ -4,8 +4,8 @@
 // - Adzuna (adzuna.com): jobs in many countries, with a free API key in ADZUNA_APP_ID and ADZUNA_APP_KEY.
 // - JSearch (on RapidAPI): jobs Google for Jobs found on LinkedIn, Indeed, Glassdoor and others, with a RapidAPI
 //   key in JSEARCH_API_KEY (free plan with a monthly limit).
-// - Jooble (jooble.org) and Careerjet (careerjet.com): job search engines, with free keys in JOOBLE_API_KEY and
-//   CAREERJET_API_KEY.
+// - Jooble (jooble.org): a job search engine, with a free key in JOOBLE_API_KEY.
+// - Careerjet (careerjet.com): off unless CAREERJET_ENABLED=1, since it only answers registered server addresses.
 // The boards ask that results credit them and link to the original posting, which the page does.
 // LinkedIn has no job search API for personal apps, so LinkedIn, Seek and Indeed are offered as links instead.
 import { randomUUID } from "node:crypto";
@@ -329,11 +329,17 @@ export async function searchJobs(
       skipped: !joobleConfigured() ? "add a free Jooble API key to search it" : undefined,
       run: (query) => jooble(query, input),
     },
-    {
-      name: "Careerjet",
-      skipped: !careerjetConfigured() ? "add a free Careerjet API key to search it" : !country ? "pick a country to search it" : undefined,
-      run: (query) => careerjet(query, input, searcher),
-    },
+    // Careerjet only answers searches from the internet addresses registered with it, which suits a hosted site, not
+    // an app on your own computer. It stays off until it's switched on with CAREERJET_ENABLED=1.
+    ...(process.env.CAREERJET_ENABLED === "1"
+      ? [
+          {
+            name: "Careerjet" as const,
+            skipped: !careerjetConfigured() ? "add a free Careerjet API key to search it" : !country ? "pick a country to search it" : undefined,
+            run: (query: string) => careerjet(query, input, searcher),
+          },
+        ]
+      : []),
   ];
 
   const sources: SourceResult[] = [];
