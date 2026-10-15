@@ -221,8 +221,12 @@ const STOPWORDS = new Set(
 export function profileTerms(profile: Profile | null, queries: string[], skills: string[] = []): string[] {
   const terms = new Set<string>();
   const add = (term: string) => {
-    const clean = term.trim().toLowerCase();
-    if (clean.length > 1 && !STOPWORDS.has(clean)) terms.add(clean);
+    // "Cascading Style Sheets (CSS)" is looked for as both "cascading style sheets" and "css".
+    const parts = withoutBrackets(term);
+    for (const part of parts) {
+      const clean = part.trim().toLowerCase();
+      if (clean.length > 1 && !STOPWORDS.has(clean)) terms.add(clean);
+    }
   };
   for (const query of queries) {
     add(query);
@@ -241,6 +245,7 @@ function rank(jobs: Found[], profile: Profile | null, queries: string[], extraSk
   const allSkills = [...(profile?.skills ?? []), ...extraSkills];
   const skills = new Set(allSkills.map((skill) => skill.toLowerCase()));
   const terms = profileTerms(profile, queries, extraSkills).map((term) => ({ term, pattern: wordPattern(term) }));
+  const names = displayNames(profile, queries, extraSkills);
   return jobs
     .map((job) => {
       const title = job.title.toLowerCase();
@@ -254,16 +259,26 @@ function rank(jobs: Found[], profile: Profile | null, queries: string[], extraSk
         // than another word from your titles.
         hits.push({ term, weight: (inTitle ? 3 : 0) + (inBody ? (skills.has(term) ? 2 : 1) : 0) });
       }
+      // Spellings of the same thing ("React", "React.js"; "Next.js", "nextjs") count once, shown the way your
+      // skills write it.
+      const byKey = new Map<string, { term: string; weight: number }>();
+      for (const hit of hits) {
+        const key = termKey(hit.term);
+        const best = byKey.get(key);
+        if (!best) byKey.set(key, hit);
+        else byKey.set(key, { term: skills.has(best.term) ? best.term : hit.term, weight: Math.max(best.weight, hit.weight) });
+      }
+      const unique = [...byKey.values()];
       // "react" inside a matched "react developer" isn't counted twice.
-      const matched = hits
-        .filter((hit) => !hits.some((other) => other.term !== hit.term && other.term.split(" ").includes(hit.term)))
+      const matched = unique
+        .filter((hit) => !unique.some((other) => other.term !== hit.term && other.term.split(" ").includes(hit.term)))
         .sort((a, b) => b.weight - a.weight);
       const score = matched.reduce((total, hit) => total + hit.weight, 0);
       return {
         ...job,
         description: job.description.slice(0, DESCRIPTION_LENGTH),
         score,
-        matched: matched.slice(0, 6).map((hit) => displayTerm(allSkills)(hit.term)),
+        matched: matched.slice(0, 6).map((hit) => names.get(termKey(hit.term)) ?? hit.term),
       };
     })
     .filter((job) => job.score > 0)
@@ -271,14 +286,36 @@ function rank(jobs: Found[], profile: Profile | null, queries: string[], extraSk
     .slice(0, MAX_RESULTS);
 }
 
+// "React.js", "ReactJS" and "react" share the key "react".
+function termKey(term: string): string {
+  return term.toLowerCase().replace(/[^a-z0-9+#]/g, "").replace(/(.)js$/, "$1");
+}
+
 function wordPattern(term: string): RegExp {
   const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(^|[^a-z0-9])${escaped}(?![a-z0-9+#])`);
 }
 
-// Shows a matched word the way the profile writes it ("typescript" -> "TypeScript").
-function displayTerm(skills: string[]) {
-  return (term: string) => skills.find((skill) => skill.toLowerCase() === term) ?? term;
+// "Cascading Style Sheets (CSS)" -> ["Cascading Style Sheets", "CSS"].
+function withoutBrackets(text: string): string[] {
+  return [text.replace(/\([^)]*\)/g, ""), ...[...text.matchAll(/\(([^)]*)\)/g)].map((match) => match[1])].map((part) => part.trim());
+}
+
+// How each matched term is shown: the way your skills write it first, then your searches, headline and titles.
+function displayNames(profile: Profile | null, queries: string[], skills: string[]): Map<string, string> {
+  const names = new Map<string, string>();
+  const sources = [
+    ...[...(profile?.skills ?? []), ...skills].flatMap(withoutBrackets),
+    ...queries.flatMap((query) => [query, ...query.split(/\s+/)]),
+    ...(profile?.headline.split(/[|,/•·]+/) ?? []),
+    ...(profile?.positions.slice(0, 4).flatMap((position) => position.title.split(/[\s,/|&()-]+/)) ?? []),
+  ];
+  for (const source of sources) {
+    const name = source.trim();
+    const key = termKey(name);
+    if (name && key && !names.has(key)) names.set(key, name);
+  }
+  return names;
 }
 
 // --- Search suggestions ---

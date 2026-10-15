@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BadgeDollarSign, CalendarClock, CircleAlert, Download, Loader2, Plus, Search, X } from "lucide-react";
 import { formatDay, JobStatusBadge, MatchBadge, STATUS_LABELS } from "@/components/job-badges";
+import { JobFinder } from "@/components/job-finder";
 import { OpenToWork } from "@/components/open-to-work";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -25,8 +26,11 @@ const FILTERS: { value: Filter; label: string }[] = [
 
 const EMPTY_FORM = { title: "", company: "", location: "", url: "", description: "" };
 
-export function JobsBoard() {
+export type JobsTab = "mine" | "find";
+
+export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
   const router = useRouter();
+  const [tab, setTab] = useState<JobsTab>(initialTab);
   const [jobs, setJobs] = useState<JobRecord[] | null>(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -80,6 +84,12 @@ export function JobsBoard() {
 
   const shown = (jobs ?? []).filter((job) => filter === "all" || job.status === filter);
 
+  // The tab is kept in the address (?tab=find), so reloading or going back shows the same one.
+  function showTab(next: JobsTab) {
+    setTab(next);
+    window.history.replaceState(null, "", next === "find" ? "/jobs?tab=find" : "/jobs");
+  }
+
   return (
     <div className="grid gap-6">
       {profileEmpty && (
@@ -97,6 +107,33 @@ export function JobsBoard() {
         </Alert>
       )}
 
+      <div className="flex flex-wrap gap-1 border-b" role="tablist" aria-label="Jobs">
+        {(
+          [
+            ["mine", `Your jobs${jobs ? ` (${jobs.length})` : ""}`],
+            ["find", "Find jobs"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            role="tab"
+            aria-selected={tab === value}
+            onClick={() => showTab(value)}
+            className={cn(
+              "-mb-px border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground",
+              tab === value && "border-foreground font-medium text-foreground",
+            )}
+          >
+            {value === "find" && <Search className="mr-1.5 inline size-3.5" />}
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "find" ? (
+        <JobFinder onSaved={(job) => setJobs((current) => [job, ...(current ?? [])])} />
+      ) : (
+        <>
       <NextSteps jobs={jobs ?? []} />
 
       {adding ? (
@@ -105,9 +142,9 @@ export function JobsBoard() {
             <CardTitle>Add a job</CardTitle>
             <CardDescription>
               Paste the details of a job you found, or{" "}
-              <Link href="/jobs/find" className="text-foreground underline underline-offset-4">
+              <button type="button" className="text-foreground underline underline-offset-4" onClick={() => showTab("find")}>
                 find jobs that match your profile
-              </Link>
+              </button>
               .
             </CardDescription>
             {jobs && jobs.length > 0 && (
@@ -178,11 +215,9 @@ export function JobsBoard() {
         <CardHeader>
           <CardTitle>Your jobs</CardTitle>
           <CardAction className="flex flex-wrap justify-end gap-2">
-            <Button asChild size="sm" variant={adding ? "default" : "outline"}>
-              <Link href="/jobs/find">
-                <Search />
-                Find jobs
-              </Link>
+            <Button size="sm" variant={adding ? "default" : "outline"} onClick={() => showTab("find")}>
+              <Search />
+              Find jobs
             </Button>
             {!adding && (
               <Button size="sm" onClick={() => setAdding(true)}>
@@ -275,6 +310,8 @@ export function JobsBoard() {
       </Card>
 
       <OpenToWork jobs={jobs ?? []} />
+        </>
+      )}
     </div>
   );
 }

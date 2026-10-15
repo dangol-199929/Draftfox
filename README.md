@@ -104,12 +104,12 @@ To use your own ComfyUI workflow instead of the built-in one, export it with **E
 
 ## Jobs
 
-**Find jobs** (`/jobs/find`) suggests job titles from your profile and searches job boards through their public APIs:
+The **Find jobs** tab on the Jobs page suggests job titles from your profile, searches job boards through their public APIs and lists the jobs right there:
 
 - [Himalayas](https://himalayas.app) and [Jobicy](https://jobicy.com): remote jobs, no setup.
 - [Adzuna](https://www.adzuna.com): jobs in Australia, the UK, the US and 16 other countries. Optional: get a free key at [developer.adzuna.com](https://developer.adzuna.com) and set `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`.
 
-Results are ranked by how many of your skills and titles they mention, and **Save to my jobs** adds one to your list with its description. **Save this search** keeps it: run it again later and the jobs that are new since last time are marked. The same searches are linked on LinkedIn, Seek and Indeed for you to open; LinkedIn has no job search API for personal apps, and Draftfox doesn't scrape any site. Only the search words and country are sent to the job boards.
+Results are ranked by how many of your skills and titles they mention. Click a job to read its details, and **Save to my jobs** adds it to your list with its description. **Save this search** keeps it: run it again later and the jobs that are new since last time are marked. LinkedIn has no job search API for personal apps, and Draftfox doesn't scrape any site. Only the search words and country are sent to the job boards.
 
 You can also add a job by hand: paste the title, company, link and description. On a job's page:
 

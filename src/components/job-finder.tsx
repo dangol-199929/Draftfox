@@ -2,15 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Bookmark, Check, ChevronDown, CircleAlert, ExternalLink, Loader2, Plus, Search, Sparkles, X } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Bookmark, Check, ChevronDown, Loader2, Plus, Search, Sparkles, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { JobRecord } from "@/lib/db.ts";
-import { COUNTRIES, searchLinks, SOURCE_SITES } from "@/lib/job-links.ts";
+import { COUNTRIES, SOURCE_SITES } from "@/lib/job-links.ts";
 import type { FoundJob, SourceResult } from "@/lib/job-search.ts";
 import { useSavedState } from "@/lib/use-saved-state.ts";
 import { cn } from "@/lib/utils";
@@ -22,7 +21,8 @@ type Suggestion = { searches: string[]; skills: string[]; country: string; fromM
 
 const EMPTY_SEARCH: Search = { queries: ["", "", ""], country: "", place: "", skills: [] };
 
-export function JobFinder() {
+// Searches job boards and lists the matching jobs right here; onSaved hears about each one saved to your list.
+export function JobFinder({ onSaved }: { onSaved?: (job: JobRecord) => void }) {
   const [search, setSearch] = useState<Search>(EMPTY_SEARCH);
   const [results, setResults] = useState<FoundJob[] | null>(null);
   const [sources, setSources] = useState<SourceResult[]>([]);
@@ -30,7 +30,6 @@ export function JobFinder() {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
   const [suggesting, setSuggesting] = useState(false);
-  const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
   // Job links already in your tracker, so a result you saved shows as saved.
   const [savedJobs, setSavedJobs] = useState<Map<string, string>>(new Map());
   const [saving, setSaving] = useState<string | null>(null);
@@ -74,7 +73,6 @@ export function JobFinder() {
     try {
       const response = await fetch("/api/jobs/search");
       const data = (await response.json()) as Suggestion;
-      setSuggestion(data);
       setSearch((current) => {
         if (onlyIfEmpty && current.queries.some(Boolean)) return current;
         return {
@@ -150,6 +148,7 @@ export function JobFinder() {
       const id = data.job?.id ?? data.duplicateId;
       if (!id) throw new Error(data.error ?? "Couldn't save the job.");
       setSavedJobs((current) => new Map(current).set(job.url, id));
+      if (data.job) onSaved?.(data.job);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -200,22 +199,6 @@ export function JobFinder() {
 
   return (
     <div className="grid gap-6">
-      {suggestion?.profileEmpty && (
-        <Alert>
-          <CircleAlert />
-          <AlertTitle>Your profile is empty</AlertTitle>
-          <AlertDescription>
-            <p>
-              Results are ranked by how well they match your skills and roles, so add those first (import your LinkedIn
-              data or your CV).{" "}
-              <Link href="/profile" className="font-medium text-foreground underline underline-offset-4">
-                Go to Profile
-              </Link>
-            </p>
-          </AlertDescription>
-        </Alert>
-      )}
-
       <Card>
         <CardHeader>
           <CardTitle>What to look for</CardTitle>
@@ -329,35 +312,6 @@ export function JobFinder() {
         </CardContent>
       </Card>
 
-      {queries.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Search on job sites</CardTitle>
-            <CardDescription>
-              The same searches on sites without an open API. They open in your browser; nothing is read from them.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-2">
-            {queries.map((query) => (
-              <div key={query} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                <span className="min-w-36 font-medium">{query}</span>
-                {searchLinks(query, search.country, search.place).map((link) => (
-                  <a
-                    key={link.site}
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                  >
-                    {link.site} <ExternalLink className="size-3" />
-                  </a>
-                ))}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
       {(results || error) && (
         <Card>
           <CardHeader>
@@ -399,7 +353,7 @@ export function JobFinder() {
             {error && <p className="text-sm text-destructive">{error}</p>}
             {results && results.length === 0 && (
               <p className="py-8 text-center text-sm text-muted-foreground">
-                Nothing matched your profile. Try broader titles, another country, or the job site links above.
+                Nothing matched your profile. Try broader titles or another country.
               </p>
             )}
             {results && results.length > 0 && (
@@ -411,14 +365,14 @@ export function JobFinder() {
                     <li key={job.id} className="grid gap-2 py-3">
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div className="grid min-w-0 gap-0.5">
-                          <a
-                            href={job.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm font-medium underline-offset-4 hover:underline"
+                          <button
+                            type="button"
+                            aria-expanded={expanded}
+                            onClick={() => setOpen(expanded ? null : job.id)}
+                            className="text-left text-sm font-medium underline-offset-4 hover:underline"
                           >
                             {job.title}
-                          </a>
+                          </button>
                           <span className="text-xs text-muted-foreground">
                             {[job.company, job.location, job.salary, job.postedAt && `posted ${formatAge(job.postedAt)}`]
                               .filter(Boolean)
@@ -461,13 +415,23 @@ export function JobFinder() {
                             onClick={() => setOpen(expanded ? null : job.id)}
                             className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                           >
-                            {expanded ? "Hide" : "Description"}
+                            {expanded ? "Hide details" : "Details"}
                             <ChevronDown className={cn("size-3.5 transition-transform", expanded && "rotate-180")} />
                           </button>
                         )}
                       </div>
                       {expanded && (
-                        <p className="max-h-80 overflow-y-auto rounded-md bg-muted/50 p-3 text-sm whitespace-pre-line">{job.description}</p>
+                        <div className="grid gap-2 rounded-md bg-muted/50 p-3">
+                          <p className="max-h-96 overflow-y-auto text-sm whitespace-pre-line">{job.description}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Save it to check the fit, write a cover letter and track it. The original posting, where you
+                            apply, is{" "}
+                            <a href={job.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4 hover:text-foreground">
+                              on {job.source}
+                            </a>
+                            .
+                          </p>
+                        </div>
                       )}
                     </li>
                   );

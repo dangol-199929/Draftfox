@@ -4,14 +4,15 @@ import { PageHeader } from "@/components/page-header";
 
 export const metadata: Metadata = { title: "Jobs" };
 
-export default function JobsPage() {
+export default async function JobsPage({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
+  const { tab } = await searchParams;
   return (
     <div className="grid gap-6">
       <PageHeader
         title="Jobs"
-        description="Add a job you found, see how it fits your profile, draft a cover letter and answers, and track where you applied. You always apply yourself."
+        description="Find jobs that match your profile or add one you found, see how each fits, draft a cover letter and answers, and track where you applied. You always apply yourself."
       />
-      <JobsBoard />
+      <JobsBoard initialTab={tab === "find" ? "find" : "mine"} />
     </div>
   );
 }
