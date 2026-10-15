@@ -115,15 +115,19 @@ export default async function ReportsPage({
           </CardContent>
         </Card>
 
-        <Card>
+        {/* Fixed height with its own scroll, so a busy period doesn't stretch the page. */}
+        <Card className="md:h-[25rem]">
           <CardHeader>
             <CardTitle>Recent activity</CardTitle>
+            {report.activity.length > 0 && (
+              <CardDescription>Newest first.</CardDescription>
+            )}
           </CardHeader>
-          <CardContent>
+          <CardContent className="max-h-[25rem] min-h-0 flex-1 overflow-y-auto md:max-h-none">
             {report.activity.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nothing yet in this period.</p>
             ) : (
-              <ul className="grid gap-2.5">
+              <ul className="grid gap-2.5 pb-1">
                 {report.activity.map((item, index) => (
                   <li key={`${item.at}-${index}`} className="flex gap-3 text-sm">
                     <time dateTime={item.at} className="w-28 shrink-0 text-muted-foreground tabular-nums">

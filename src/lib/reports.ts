@@ -125,7 +125,7 @@ export async function buildReport(range: Range, now = new Date()): Promise<Repor
     ...currentEvents.map((event) => ({ at: event.at, text: eventText(event) })),
   ]
     .sort((a, b) => b.at.localeCompare(a.at))
-    .slice(0, 12);
+    .slice(0, 100);
 
   return {
     range,
