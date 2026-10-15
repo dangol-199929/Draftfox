@@ -255,14 +255,14 @@ export async function deletePost(urn: string): Promise<void> {
 
 async function requirePostingConnection(): Promise<Connection> {
   const connection = await readConnection();
-  if (!connection) throw new LinkedInError(401, "LinkedIn isn't connected. Connect it on the LinkedIn page.");
+  if (!connection) throw new LinkedInError(401, "LinkedIn isn't connected. Connect it on the Profile page.");
   if (Date.parse(connection.expiresAt) <= Date.now()) {
-    throw new LinkedInError(401, "Your LinkedIn access has expired. Reconnect on the LinkedIn page.");
+    throw new LinkedInError(401, "Your LinkedIn access has expired. Reconnect on the Profile page.");
   }
   if (!hasPostingScope(connection.scope)) {
     throw new LinkedInError(
       403,
-      'Posting isn\'t enabled. Add "Share on LinkedIn" to your LinkedIn app, then click Enable posting on the LinkedIn page.',
+      'Posting isn\'t enabled. Add "Share on LinkedIn" to your LinkedIn app, then click Enable posting on the Profile page.',
     );
   }
   return connection;
@@ -283,11 +283,11 @@ async function postsRequest(connection: Connection, path: string, init: RequestI
   const detail = await linkedInMessage(response);
   switch (response.status) {
     case 401:
-      throw new LinkedInError(401, "Your LinkedIn access has expired or was revoked. Reconnect on the LinkedIn page.");
+      throw new LinkedInError(401, "Your LinkedIn access has expired or was revoked. Reconnect on the Profile page.");
     case 403:
       throw new LinkedInError(
         403,
-        'LinkedIn refused: posting permission is missing. Add "Share on LinkedIn" to your LinkedIn app, then click Enable posting on the LinkedIn page.',
+        'LinkedIn refused: posting permission is missing. Add "Share on LinkedIn" to your LinkedIn app, then click Enable posting on the Profile page.',
       );
     case 426:
       throw new LinkedInError(

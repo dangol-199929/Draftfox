@@ -19,7 +19,7 @@ export async function PUT(request: Request) {
     const status = await getStatus();
     if (!status.connected || status.expired || !status.canPost) {
       return Response.json(
-        { error: "To post automatically, connect LinkedIn and enable posting on the LinkedIn page first." },
+        { error: "To post automatically, connect LinkedIn and enable posting on the Profile page first." },
         { status: 400 },
       );
     }

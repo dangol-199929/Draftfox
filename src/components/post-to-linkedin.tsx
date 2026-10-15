@@ -98,12 +98,12 @@ export function PostToLinkedIn({ text, disabled }: { text: string; disabled: boo
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
-          <Link href="/linkedin" className="underline underline-offset-2 hover:text-foreground">
+          <Link href="/profile" className="underline underline-offset-2 hover:text-foreground">
             {!status.connected
               ? "Connect LinkedIn to post directly"
               : status.expired
                 ? "Reconnect LinkedIn to post directly"
-                : "Enable posting on the LinkedIn page"}
+                : "Enable posting on the Profile page"}
           </Link>
         </p>
       )}

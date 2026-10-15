@@ -303,11 +303,11 @@ export function AutopilotPanel() {
           <Alert variant="destructive">
             <AlertDescription>
               {error}
-              {/LinkedIn page/.test(error) && (
+              {/Profile page/.test(error) && (
                 <>
                   {" "}
-                  <Link href="/linkedin" className="underline underline-offset-2">
-                    Open the LinkedIn page
+                  <Link href="/profile" className="underline underline-offset-2">
+                    Open the Profile page
                   </Link>
                 </>
               )}

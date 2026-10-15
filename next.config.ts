@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
     return [
       { source: "/posts", destination: "/", permanent: false },
       { source: "/prompt", destination: "/settings", permanent: false },
+      { source: "/linkedin", destination: "/profile", permanent: false },
     ];
   },
 };

@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   const config = getConfig();
   if (!config) {
-    return NextResponse.redirect(new URL("/linkedin?error=not_configured", request.url));
+    return NextResponse.redirect(new URL("/profile?error=not_configured", request.url));
   }
 
   const mode: LoginMode = request.nextUrl.searchParams.get("posting") === "1" ? "posting" : "basic";

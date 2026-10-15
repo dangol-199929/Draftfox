@@ -445,12 +445,12 @@ export function PostEditor({ id }: { id: string }) {
 
                 {!canPost && linkedIn && (
                   <p className="text-xs text-muted-foreground">
-                    <Link href="/linkedin" className="underline underline-offset-2 hover:text-foreground">
+                    <Link href="/profile" className="underline underline-offset-2 hover:text-foreground">
                       {!linkedIn.connected
                         ? "Connect LinkedIn"
                         : linkedIn.expired
                           ? "Reconnect LinkedIn"
-                          : "Enable posting on the LinkedIn page"}
+                          : "Enable posting on the Profile page"}
                     </Link>{" "}
                     to post or schedule. You can keep editing the draft meanwhile.
                   </p>

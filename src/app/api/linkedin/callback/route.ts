@@ -9,7 +9,7 @@ const SCOPE_ERRORS = ["unauthorized_scope_error", "invalid_scope"];
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const back = (query: Record<string, string>) => {
-    const response = NextResponse.redirect(new URL(`/linkedin?${new URLSearchParams(query)}`, request.url));
+    const response = NextResponse.redirect(new URL(`/profile?${new URLSearchParams(query)}`, request.url));
     response.cookies.delete({ name: STATE_COOKIE, path: "/api/linkedin" });
     return response;
   };

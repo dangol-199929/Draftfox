@@ -37,6 +37,13 @@ export type Profile = {
   facts: string;
   // The text of your CV, pasted or imported from a .docx or .txt file. Used on the Jobs page, not in posts.
   cv: string;
+  // Details for application forms, shown in the quick-copy button. Never sent to the model.
+  email: string;
+  phone: string;
+  linkedinUrl: string;
+  noticePeriod: string;
+  salaryExpectation: string;
+  workRights: string;
   useFacts: boolean;
   useStyle: boolean;
 };
@@ -63,6 +70,12 @@ export const EMPTY_PROFILE: Profile = {
   posts: [],
   facts: "",
   cv: "",
+  email: "",
+  phone: "",
+  linkedinUrl: "",
+  noticePeriod: "",
+  salaryExpectation: "",
+  workRights: "",
   useFacts: true,
   useStyle: true,
 };
@@ -333,6 +346,12 @@ export function validateProfile(value: unknown): Profile | string {
     location: text("location", LIMITS.short),
     facts: text("facts", LIMITS.long),
     cv: text("cv", LIMITS.cv),
+    email: text("email", LIMITS.short),
+    phone: text("phone", LIMITS.short),
+    linkedinUrl: text("linkedinUrl", LIMITS.short),
+    noticePeriod: text("noticePeriod", LIMITS.short),
+    salaryExpectation: text("salaryExpectation", LIMITS.short),
+    workRights: text("workRights", LIMITS.short),
   };
   for (const [field, v] of Object.entries(strings)) {
     if (v === null) return `"${field}" must be text of reasonable length.`;
@@ -366,6 +385,12 @@ export function validateProfile(value: unknown): Profile | string {
     posts,
     facts: strings.facts!,
     cv: strings.cv!,
+    email: strings.email!,
+    phone: strings.phone!,
+    linkedinUrl: strings.linkedinUrl!,
+    noticePeriod: strings.noticePeriod!,
+    salaryExpectation: strings.salaryExpectation!,
+    workRights: strings.workRights!,
     useFacts: data.useFacts !== false,
     useStyle: data.useStyle !== false,
   };
