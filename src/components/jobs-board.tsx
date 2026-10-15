@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BadgeDollarSign, CalendarClock, CircleAlert, ClipboardPaste, Download, Loader2, Plus, Search, X } from "lucide-react";
+import { BadgeDollarSign, CalendarClock, CircleAlert, ClipboardPaste, Columns3, Download, List, Loader2, Plus, Search, X } from "lucide-react";
 import { formatDay, JobStatusBadge, MatchBadge, STATUS_LABELS } from "@/components/job-badges";
 import { JobDrawer } from "@/components/job-drawer";
 import { JobFinder } from "@/components/job-finder";
+import { JobListCard, selectInUrl, SplitLayout, useWide } from "@/components/job-split";
+import { JobWorkspace } from "@/components/job-workspace";
 import { OpenToWork } from "@/components/open-to-work";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -40,8 +42,17 @@ function siteName(url: string) {
 
 export type JobsTab = "mine" | "find";
 
-export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
+type View = "list" | "board";
+const VIEW_KEY = "draftfox.jobsView";
+
+// initialJob: the job to select first (from ?job= in the address); a saved job's id, or a Find jobs result's.
+export function JobsBoard({ initialTab = "mine", initialJob = null }: { initialTab?: JobsTab; initialJob?: string | null }) {
   const [tab, setTab] = useState<JobsTab>(initialTab);
+  const wide = useWide();
+  // List: your jobs beside the selected one. Board: a column per status (wide screens only).
+  const [view, setView] = useState<View>("list");
+  const [selected, setSelected] = useState<string | null>(initialTab === "mine" ? initialJob : null);
+  const [scores, setScores] = useState<Record<string, number | null>>({});
   const [jobs, setJobs] = useState<JobRecord[] | null>(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -61,12 +72,72 @@ export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
 
   function loadJobs(openAdding = false) {
     fetch("/api/jobs")
-      .then((response) => response.json() as Promise<{ jobs: JobRecord[] }>)
-      .then(({ jobs }) => {
+      .then((response) => response.json() as Promise<{ jobs: JobRecord[]; scores?: Record<string, number | null> }>)
+      .then(({ jobs, scores }) => {
         setJobs(jobs);
+        setScores(scores ?? {});
         if (openAdding && jobs.length === 0) setAdding(true);
       })
       .catch(() => setError("Couldn't load your jobs."));
+  }
+
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(VIEW_KEY) === "board") setView("board");
+    } catch {
+      // Storage blocked; start with the list.
+    }
+  }, []);
+
+  function changeView(next: View) {
+    setView(next);
+    try {
+      window.localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // Not remembered; fine.
+    }
+  }
+
+  function select(id: string | null) {
+    setSelected(id);
+    selectInUrl(id);
+  }
+
+  // A job opens beside the list, or in the drawer when the board is showing.
+  const board = view === "board" && wide;
+  function openJob(id: string) {
+    if (board) setDrawerId(id);
+    else select(id);
+  }
+
+  // Keeps the list in step with what you change on the job's page.
+  function updated(job: JobRecord) {
+    setJobs((current) => current?.map((item) => (item.id === job.id ? job : item)) ?? current);
+  }
+
+  function removed(id: string) {
+    setJobs((current) => current?.filter((item) => item.id !== id) ?? current);
+    if (selected === id) select(null);
+  }
+
+  // Dropping a card in another column of the board changes its status.
+  async function move(id: string, status: JobStatus) {
+    const job = jobs?.find((item) => item.id === id);
+    if (!job || job.status === status) return;
+    updated({ ...job, status });
+    try {
+      const response = await fetch(`/api/jobs/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const data = (await response.json()) as { job?: JobRecord; error?: string };
+      if (!response.ok || !data.job) throw new Error(data.error ?? "Couldn't move the job.");
+      updated(data.job);
+    } catch (err) {
+      updated(job);
+      setError((err as Error).message);
+    }
   }
 
   useEffect(() => {
@@ -96,7 +167,7 @@ export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
       // Open it in the drawer to prepare the application, and clear the form for the next one.
       const saved = data.job;
       setJobs((current) => [saved, ...(current ?? [])]);
-      setDrawerId(saved.id);
+      openJob(saved.id);
       setForm(EMPTY_FORM);
       setExtra(NO_EXTRA);
       setPasted("");
@@ -138,6 +209,7 @@ export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
   // The tab is kept in the address (?tab=find), so reloading or going back shows the same one.
   function showTab(next: JobsTab) {
     setTab(next);
+    setSelected(null);
     window.history.replaceState(null, "", next === "find" ? "/jobs?tab=find" : "/jobs");
   }
 
@@ -182,10 +254,14 @@ export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
       </div>
 
       {tab === "find" ? (
-        <JobFinder onSaved={(job) => setJobs((current) => [job, ...(current ?? [])])} />
+        <JobFinder
+          initialJob={initialTab === "find" ? initialJob : null}
+          onSaved={(job) => setJobs((current) => [job, ...(current ?? [])])}
+          onRemoved={(id) => setJobs((current) => current?.filter((job) => job.id !== id) ?? current)}
+        />
       ) : (
         <>
-      <NextSteps jobs={jobs ?? []} />
+      <NextSteps jobs={jobs ?? []} onOpen={openJob} />
 
       {adding ? (
         <Card>
@@ -265,7 +341,7 @@ export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
                   {formError}
                   {duplicateId && (
                     <>
-                      <button type="button" className="text-foreground underline underline-offset-4" onClick={() => setDrawerId(duplicateId)}>
+                      <button type="button" className="text-foreground underline underline-offset-4" onClick={() => openJob(duplicateId)}>
                         Open it
                       </button>
                       <button type="button" className="text-foreground underline underline-offset-4" onClick={() => void add(undefined, true)}>
@@ -285,115 +361,230 @@ export function JobsBoard({ initialTab = "mine" }: { initialTab?: JobsTab }) {
         </Card>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Your jobs</CardTitle>
-          <CardAction className="flex flex-wrap justify-end gap-2">
-            <Button size="sm" variant={adding ? "default" : "outline"} onClick={() => showTab("find")}>
+      <section className="grid gap-3" aria-labelledby="your-jobs-heading">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="your-jobs-heading" className="text-base font-semibold">
+            Your jobs
+          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            {wide && (
+              <div className="inline-flex rounded-lg bg-muted p-0.5" role="group" aria-label="View">
+                {(
+                  [
+                    ["list", "List", List],
+                    ["board", "Board", Columns3],
+                  ] as const
+                ).map(([value, label, Icon]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={view === value}
+                    onClick={() => changeView(value)}
+                    className={cn(
+                      "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground",
+                      view === value && "bg-background text-foreground shadow-sm dark:bg-input/40",
+                    )}
+                  >
+                    <Icon className="size-3.5" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <Button size="sm" variant="outline" onClick={() => showTab("find")}>
               <Search />
               Find jobs
             </Button>
             {!adding && (
               <Button size="sm" onClick={() => setAdding(true)}>
-                <Plus />
+                <ClipboardPaste />
                 Paste a job
               </Button>
             )}
-          </CardAction>
-        </CardHeader>
-        <CardContent className="grid gap-3">
-          <div className="flex flex-wrap gap-1" role="tablist" aria-label="Show">
-            {FILTERS.map((option) => {
-              const count = (jobs ?? []).filter((job) => option.value === "all" || job.status === option.value).length;
-              return (
-                <button
-                  key={option.value}
-                  role="tab"
-                  aria-selected={filter === option.value}
-                  onClick={() => setFilter(option.value)}
-                  className={cn(
-                    "rounded-md px-2.5 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-                    filter === option.value && "bg-muted text-foreground",
-                  )}
-                >
-                  {option.label}
-                  {jobs && <span className="ml-1 tabular-nums text-muted-foreground">{count}</span>}
-                </button>
-              );
-            })}
           </div>
+        </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          {!jobs && !error && (
-            <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" /> Loading…
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        {!jobs && !error && (
+          <div className="grid gap-2" aria-label="Loading your jobs">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-16 animate-pulse rounded-lg bg-muted" />
+            ))}
+          </div>
+        )}
+        {jobs && jobs.length === 0 && (
+          <div className="grid justify-items-center gap-3 rounded-xl border border-dashed px-4 py-10 text-center">
+            <p className="text-sm font-medium">No jobs yet</p>
+            <p className="max-w-sm text-sm text-muted-foreground">
+              Find jobs that match your profile, or paste one you found on LinkedIn, SEEK or a company&apos;s site.
             </p>
-          )}
-          {jobs && shown.length === 0 && (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              {jobs.length === 0 ? "No jobs yet. Paste one you found above, or find jobs." : "Nothing here."}
-            </p>
-          )}
-          {shown.length > 0 && (
-            <ul className="grid divide-y">
-              {shown.map((job) => (
-                <li key={job.id}>
-                  <Link
-                    href={`/jobs/${job.id}`}
-                    className="-mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-muted/60"
-                  >
-                    <span className="grid min-w-0 flex-1 gap-0.5">
-                      <span className="truncate text-sm font-medium">{job.title}</span>
-                      <span className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                        {[job.company, job.location].filter(Boolean).join(" · ") || "No company added"}
-                        {job.followUp && (
-                          <span className="inline-flex items-center gap-1">
-                            <CalendarClock className="size-3" /> {formatDay(job.followUp)}
-                          </span>
-                        )}
-                      </span>
-                    </span>
-                    <span className="flex shrink-0 flex-wrap justify-end gap-1">
-                      {job.fit && <MatchBadge match={job.fit.match} />}
-                      <JobStatusBadge status={job.status} />
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-          {jobs && jobs.length > 0 && (
-            <div className="flex flex-wrap gap-2 border-t pt-3">
-              <Button asChild size="sm" variant="ghost">
-                <a href="/api/jobs/export" download>
-                  <Download />
-                  Export to CSV
-                </a>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button size="sm" onClick={() => showTab("find")}>
+                <Search />
+                Find jobs
               </Button>
-              {jobs.some((job) => job.offer || job.status === "offer") && (
-                <Button asChild size="sm" variant="ghost">
-                  <Link href="/jobs/offers">
-                    <BadgeDollarSign />
-                    Compare offers
-                  </Link>
-                </Button>
-              )}
+              <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
+                <ClipboardPaste />
+                Paste a job
+              </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        )}
+
+        {jobs && jobs.length > 0 && board && (
+          <Board jobs={jobs} scores={scores} onOpen={openJob} onMove={(id, status) => void move(id, status)} />
+        )}
+
+        {jobs && jobs.length > 0 && !board && (
+          <SplitLayout
+            wide={wide}
+            open={Boolean(selected && (jobs ?? []).find((job) => job.id === selected))}
+            onClose={() => select(null)}
+            title={(jobs ?? []).find((job) => job.id === selected)?.title ?? "Job"}
+            fullPage={selected ? `/jobs/${selected}` : undefined}
+            list={
+              <Card className="gap-0 py-0">
+                <div className="flex flex-wrap gap-1 border-b px-2 py-2" role="tablist" aria-label="Show">
+                  {FILTERS.map((option) => {
+                    const count = jobs.filter((job) => option.value === "all" || job.status === option.value).length;
+                    return (
+                      <button
+                        key={option.value}
+                        role="tab"
+                        aria-selected={filter === option.value}
+                        onClick={() => setFilter(option.value)}
+                        className={cn(
+                          "rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                          filter === option.value && "bg-muted font-medium text-foreground",
+                        )}
+                      >
+                        {option.label}
+                        <span className="ml-1 tabular-nums">{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {shown.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-sm text-muted-foreground">Nothing here yet.</p>
+                ) : (
+                  <ul className="grid gap-0.5 p-1.5 xl:max-h-[calc(100dvh-14rem)] xl:overflow-y-auto">
+                    {shown.map((job) => (
+                      <li key={job.id}>
+                        <JobListCard
+                          selected={job.id === selected}
+                          onSelect={() => select(job.id)}
+                          job={{ ...job, fit: scores[job.id], note: job.followUp ? `Next step ${formatDay(job.followUp)}` : undefined }}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+            }
+            detail={
+              selected && (
+                <JobWorkspace key={selected} id={selected} onChange={updated} onDeleted={() => removed(selected)} />
+              )
+            }
+          />
+        )}
+
+        {jobs && jobs.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm" variant="ghost">
+              <a href="/api/jobs/export" download>
+                <Download />
+                Export to CSV
+              </a>
+            </Button>
+            <Button asChild size="sm" variant="ghost">
+              <Link href="/jobs/offers">
+                <BadgeDollarSign />
+                Compare offers
+              </Link>
+            </Button>
+          </div>
+        )}
+      </section>
 
       <OpenToWork jobs={jobs ?? []} />
         </>
       )}
 
-      <JobDrawer
-        id={drawerId}
-        onClose={() => {
-          setDrawerId(null);
-          loadJobs();
-        }}
-      />
+      <JobDrawer id={drawerId} onClose={() => setDrawerId(null)} onChange={updated} />
+    </div>
+  );
+}
+
+// Your pipeline as columns, one per status. Drag a card to another column to change its status.
+function Board({
+  jobs,
+  scores,
+  onOpen,
+  onMove,
+}: {
+  jobs: JobRecord[];
+  scores: Record<string, number | null>;
+  onOpen: (id: string) => void;
+  onMove: (id: string, status: JobStatus) => void;
+}) {
+  const [over, setOver] = useState<JobStatus | null>(null);
+  return (
+    <div className="grid grid-cols-5 gap-3">
+      {JOB_STATUSES.map((status) => {
+        const column = jobs.filter((job) => job.status === status);
+        return (
+          <section
+            key={status}
+            aria-label={STATUS_LABELS[status]}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setOver(status);
+            }}
+            onDragLeave={() => setOver((current) => (current === status ? null : current))}
+            onDrop={(event) => {
+              event.preventDefault();
+              setOver(null);
+              const id = event.dataTransfer.getData("text/plain");
+              if (id) onMove(id, status);
+            }}
+            className={cn(
+              "grid min-h-48 content-start gap-2 rounded-xl border bg-muted/30 p-2 transition-colors",
+              over === status && "border-brand/50 bg-brand-soft",
+            )}
+          >
+            <h3 className="flex items-center justify-between px-1 pt-1 text-xs font-medium text-muted-foreground">
+              {STATUS_LABELS[status]}
+              <span className="tabular-nums">{column.length}</span>
+            </h3>
+            {column.length === 0 && <p className="px-1 py-4 text-center text-xs text-muted-foreground">Drop a job here</p>}
+            {column.map((job) => (
+              <div
+                key={job.id}
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer.setData("text/plain", job.id);
+                  event.dataTransfer.effectAllowed = "move";
+                }}
+                className="cursor-grab rounded-lg border bg-card shadow-xs active:cursor-grabbing"
+              >
+                <JobListCard
+                  selected={false}
+                  onSelect={() => onOpen(job.id)}
+                  job={{
+                    title: job.title,
+                    company: job.company,
+                    location: "",
+                    salary: job.salary,
+                    fit: scores[job.id],
+                    note: job.followUp ? `Next step ${formatDay(job.followUp)}` : undefined,
+                  }}
+                />
+              </div>
+            ))}
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -408,7 +599,7 @@ function localDay(date: Date) {
 
 // Next steps due today or overdue, the ones coming up this week, and applications with no answer after a week
 // and no next step set, which might be worth a follow-up email.
-function NextSteps({ jobs }: { jobs: JobRecord[] }) {
+function NextSteps({ jobs, onOpen }: { jobs: JobRecord[]; onOpen: (id: string) => void }) {
   const today = localDay(new Date());
   const inAWeek = localDay(new Date(Date.now() + 7 * DAY));
   const open = jobs.filter((job) => job.status !== "rejected");
@@ -423,13 +614,17 @@ function NextSteps({ jobs }: { jobs: JobRecord[] }) {
 
   const row = (job: JobRecord, note: string, urgent = false) => (
     <li key={`${note}-${job.id}`}>
-      <Link href={`/jobs/${job.id}`} className="-mx-2 flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-muted/60">
+      <button
+        type="button"
+        onClick={() => onOpen(job.id)}
+        className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted/60"
+      >
         <span className="grid min-w-0 flex-1">
           <span className="truncate text-sm font-medium">{job.title}</span>
           <span className="truncate text-xs text-muted-foreground">{job.company}</span>
         </span>
         <span className={cn("shrink-0 text-xs", urgent ? "font-medium text-destructive" : "text-muted-foreground")}>{note}</span>
-      </Link>
+      </button>
     </li>
   );
 

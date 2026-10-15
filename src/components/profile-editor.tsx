@@ -409,7 +409,7 @@ export function ProfileEditor({
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card id="quick-copy" className="scroll-mt-6">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <ClipboardCopy className="size-4 text-brand" />

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { JobWorkspace } from "@/components/job-workspace";
+import { QuickCopy } from "@/components/quick-copy";
 
 export const metadata: Metadata = { title: "Job" };
 
@@ -13,6 +14,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         <ArrowLeft className="size-3.5" /> All jobs
       </Link>
       <JobWorkspace id={id} />
+      <QuickCopy />
     </div>
   );
 }

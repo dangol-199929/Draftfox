@@ -108,8 +108,8 @@ export function TailoredCvCard({ job, writing, errors, onWrite, onPatch }: PartP
               className="max-h-[40rem] font-mono text-xs leading-relaxed"
             />
             <p className="text-xs text-muted-foreground">
-              Fill in your email, phone and LinkedIn on the second line. Lines starting with # become headings in the
-              .docx, and lines starting with - become bullets.
+              The contact line uses the email, phone and LinkedIn link on your Profile page; fill in anything left in
+              [brackets]. Lines starting with # become headings in the .docx, and lines starting with - become bullets.
             </p>
           </>
         )}

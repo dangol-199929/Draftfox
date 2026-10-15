@@ -118,7 +118,13 @@ The **Find jobs** tab on the Jobs page suggests job titles from your profile, se
 
 Results are ranked by how many of your skills and titles they mention. Click a job to read its details, and **Save to my jobs** adds it to your list with its description. **Save this search** keeps it: run it again later and the jobs that are new since last time are marked. LinkedIn has no job search API for personal apps, and Draftfox doesn't scrape any site. Only the search words and country are sent to the job boards.
 
-You can also add a job by hand: paste the title, company, link and description. On a job's page:
+Results and **Your jobs** use a split view on wide screens: the list on the left (title, company, salary, how long ago it was posted, where it's from, and a match score: the share of the job's keywords your profile mentions) and the selected job on the right; the address keeps the selection, so a reload opens it again. On smaller screens the job opens in a drawer. Filter the list by remote, date, salary and saved jobs. **Your jobs** also has a **Board** view on wide screens: a column per status (Saved, Applied, Interview, Offer, Closed); drag a card to change its status.
+
+**Prepare application** (on a result or a saved job) saves the job if needed and writes what the Settings page says: the cover letter only, the cover letter and a tailored CV (the default), or everything (also the fit check and interview questions). Drafts you already have are kept. On the Settings page you can also have the cover letter start as soon as you open a saved job.
+
+The **Quick copy** button at the bottom right of the Jobs pages lists the details application forms ask for (name, email, phone, location, LinkedIn, notice period, salary expectation, work rights), each copied with a click. Fill them in on the Profile page.
+
+You can also add a job by hand: paste the title, company, link and description. On a job's page, the **Application kit** has the cover letter, the CV and answers; **About the job** has the description, keywords, notes and fit; and **After applying** (once you mark it applied) has interview prep, emails, contacts and the offer:
 
 - **Fit with your profile** lists what the job asks for that your profile shows (with where it's shown) and what your profile doesn't show.
 - **Cover letter** is written from what matches. Requirements your profile doesn't show are left out of the letter and listed for you, so you decide what to say. Edit it on the page and copy it.
