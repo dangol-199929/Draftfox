@@ -163,7 +163,7 @@ function promptError(body: {
   if (/not in list|value_not_in_list/i.test(text)) {
     return [
       "model_missing",
-      `ComfyUI doesn't have the FLUX.2 Klein model files (${MODEL_FILES.unet}, ${MODEL_FILES.clip}, ${MODEL_FILES.vae}). In ComfyUI, open Templates and load "Flux.2 Klein 4B Text to Image" to download them, then try again.`,
+      `ComfyUI doesn't have the FLUX.2 Klein model files (${MODEL_FILES.unet}, ${MODEL_FILES.clip}, ${MODEL_FILES.vae}). In ComfyUI, open Templates and load "Flux.2 Klein 4B Distilled" to download them, then try again.`,
     ];
   }
   if (/node.*does not exist|invalid_prompt.*class_type/i.test(text)) {

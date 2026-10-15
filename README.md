@@ -91,7 +91,7 @@ The last command makes a test image and downloads the model the first time (abou
 *Windows or Linux (ComfyUI).* Needs an NVIDIA graphics card with about 8 GB or more.
 
 1. Install the ComfyUI desktop app from [comfy.org](https://www.comfy.org/download) and open it.
-2. In ComfyUI, open **Templates**, load **Flux.2 Klein 4B Text to Image**, and let it download the model files (`flux-2-klein-4b.safetensors`, `qwen_3_4b.safetensors`, `flux2-vae.safetensors`). Run it once to check it works.
+2. In ComfyUI, open **Templates**, load **Flux.2 Klein 4B Distilled**, and let it download the model files (`flux-2-klein-4b.safetensors`, `qwen_3_4b.safetensors`, `flux2-vae.safetensors`). Run it once to check it works.
 3. Keep ComfyUI open while you use the app. The desktop app listens on `http://127.0.0.1:8000`; if yours runs elsewhere (the portable version uses 8188, or another PC on your network), set `COMFYUI_URL`.
 
 To use your own ComfyUI workflow instead of the built-in one, export it with **Export (API)**, write `{{prompt}}`, `{{width}}`, `{{height}}` and `{{seed}}` where those go, and set `COMFYUI_WORKFLOW` to the file.

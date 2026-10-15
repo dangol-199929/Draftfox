@@ -196,12 +196,12 @@ Keep the PowerShell window open while you use Draftfox. Closing it stops the app
 ### Step 8 (optional): AI images with ComfyUI (NVIDIA graphics card)
 
 1. Download the **ComfyUI desktop app** for Windows from [comfy.org/download](https://www.comfy.org/download) and install it with the default options. Choose **NVIDIA** when it asks about your graphics card.
-2. Open ComfyUI. In the left sidebar, open **Templates**, find **Flux.2 Klein 4B Text to Image** and open it.
+2. Open ComfyUI. In the left sidebar, open **Templates**, find **Flux.2 Klein 4B Distilled** and open it.
 3. ComfyUI offers to download the missing model files (about 15 GB). Click **Download** and wait until all three finish.
 4. Click **Run** once to check that an image appears.
 5. Keep ComfyUI open while you use Draftfox. Then open a post on the **Posts** page and use **Designed card** or **Picture only**.
 
-The ComfyUI desktop app listens on port 8000, which Draftfox expects. If you use the portable version of ComfyUI instead, open `.env` in Notepad (`notepad .env`) and change the line to `COMFYUI_URL=http://127.0.0.1:8188`, then restart Draftfox.
+The ComfyUI desktop app usually listens on port 8000, which Draftfox expects. If yours uses 8188 (some desktop versions and the portable version do), open `.env` in Notepad (`notepad .env`) and change the line to `COMFYUI_URL=http://127.0.0.1:8188`, then restart Draftfox.
 
 ---
 
@@ -353,7 +353,7 @@ Open the ComfyUI app and wait until it's fully loaded, then try again. If you us
 
 #### "ComfyUI doesn't have the FLUX.2 Klein model files" (Windows)
 
-In ComfyUI, open **Templates**, load **Flux.2 Klein 4B Text to Image** and let it download the files (Windows step 8).
+In ComfyUI, open **Templates**, load **Flux.2 Klein 4B Distilled** and let it download the files (Windows step 8).
 
 #### "This ComfyUI is too old for FLUX.2 Klein"
 
