@@ -74,7 +74,8 @@ function toDraft(job: JobRecord): Draft {
   };
 }
 
-export function JobWorkspace({ id }: { id: string }) {
+// onDeleted replaces going back to /jobs after you delete the job (the Find jobs drawer closes instead).
+export function JobWorkspace({ id, onDeleted }: { id: string; onDeleted?: () => void }) {
   const router = useRouter();
   const [job, setJob] = useState<JobRecord | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -204,7 +205,8 @@ export function JobWorkspace({ id }: { id: string }) {
     try {
       await request(`/api/jobs/${id}`, { method: "DELETE" });
       lastSaved.current = draftJson;
-      router.push("/jobs");
+      if (onDeleted) onDeleted();
+      else router.push("/jobs");
     } catch (error) {
       setSaveError((error as Error).message);
     }

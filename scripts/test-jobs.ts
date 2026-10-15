@@ -59,6 +59,9 @@ Requirements:
   email: null,
   contacts: [],
   offer: null,
+  source: "",
+  salary: "",
+  postedAt: null,
   createdAt: now,
   updatedAt: now,
 };

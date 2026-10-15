@@ -1,15 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { badRequest, readJsonObject } from "@/lib/api.ts";
 import { insertJob, listJobs, logEvent, type JobRecord } from "@/lib/db.ts";
-import { findDuplicate, validateJobFields } from "@/lib/jobs.ts";
+import { findDuplicate, keywordCheck, keywordScore, validateJobFields } from "@/lib/jobs.ts";
+import { readProfile } from "@/lib/profile.ts";
 
 export const runtime = "nodejs";
 
+// The jobs, and for each one how many of its keywords your profile mentions (0 to 100, or null without keywords).
 export async function GET() {
-  return Response.json({ jobs: listJobs() });
+  const jobs = listJobs();
+  const profile = await readProfile();
+  const scores = Object.fromEntries(jobs.map((job) => [job.id, keywordScore(keywordCheck(job, profile))]));
+  return Response.json({ jobs, scores });
 }
 
-// Body: { title, company?, location?, url?, description?, notes?, allowDuplicate? }. Saves the job and returns it.
+// Body: { title, company?, location?, url?, description?, notes?, source?, salary?, postedAt?, allowDuplicate? }. Saves the job and returns it.
 // A job with the same link, or the same title at the same company, is refused with 409 and the existing job's id,
 // unless allowDuplicate is true.
 export async function POST(request: Request) {
@@ -46,6 +51,9 @@ export async function POST(request: Request) {
     email: null,
     contacts: [],
     offer: null,
+    source: typeof body.source === "string" ? body.source.slice(0, 50) : "",
+    salary: typeof body.salary === "string" ? body.salary.slice(0, 200) : "",
+    postedAt: typeof body.postedAt === "string" && !Number.isNaN(Date.parse(body.postedAt)) ? body.postedAt : null,
     createdAt: now,
     updatedAt: now,
   };

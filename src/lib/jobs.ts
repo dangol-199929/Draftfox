@@ -18,6 +18,7 @@ import {
   type JobStatus,
 } from "./db.ts";
 import { generateJson } from "./ollama.ts";
+export { keywordScore } from "./job-status.ts";
 import type { Profile } from "./profile.ts";
 
 export const LIMITS = { short: 200, url: 2000, description: 20_000, notes: 10_000, letter: 10_000, question: 1000, answer: 5000 };
@@ -332,17 +333,21 @@ const CV_CONTACT_LINE = "[Email · Phone · LinkedIn]";
 
 export async function tailorCv(job: JobRecord, profile: Profile): Promise<JobCv> {
   const reply = await generateJson<{ cv?: unknown }>(prompt(job, profile, ...fitSections(job.fit)), CV_SYSTEM, CV_SCHEMA);
-  // The profile never holds contact details, so the contact line is always a placeholder for you to fill in (the
-  // model tends to make one up), and any other email address or link not in the profile becomes a gap.
+  // The model never sees contact details, so its contact line is replaced (the model tends to make one up), and any
+  // other email address or link not in the profile becomes a placeholder.
   const known = profileText(profile).toLowerCase();
   const lines = tidy(reply.cv, LIMITS.letter).split("\n");
   if (lines.length > 1 && /@|\d{3}|linkedin|\[|\||·/i.test(lines[1])) lines[1] = CV_CONTACT_LINE;
   else if (lines.length > 1) lines.splice(1, 0, CV_CONTACT_LINE);
-  const text = lines
+  let text = lines
     .join("\n")
     .replace(CONTACT_DETAIL, (match) => (known.includes(match.toLowerCase()) ? match : match.includes("@") ? "[Email]" : "[Link]"));
   if (!text) throw new Error("The model didn't write a CV. Try again.");
-  return { text, unverified: detailsToCheck(text, job, profile), at: new Date().toISOString() };
+  const unverified = detailsToCheck(text, job, profile);
+  // Your own contact details from the Profile page's quick-copy details, put in here rather than by the model.
+  const contact = [profile.email, profile.phone, profile.linkedinUrl].map((part) => part.trim()).filter(Boolean);
+  if (contact.length > 0) text = text.replace(CV_CONTACT_LINE, contact.join(" · "));
+  return { text, unverified, at: new Date().toISOString() };
 }
 
 // --- Interview prep ---

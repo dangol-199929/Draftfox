@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { Bookmark, Check, ChevronDown, Loader2, Plus, Search, Sparkles, X } from "lucide-react";
+import { JobDrawer } from "@/components/job-drawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +39,8 @@ export function JobFinder({ onSaved }: { onSaved?: (job: JobRecord) => void }) {
   const [savedSearchId, setSavedSearchId] = useState<string | null>(null);
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
   const [onlyNew, setOnlyNew] = useState(false);
+  // The saved job open in the drawer on the right.
+  const [drawerId, setDrawerId] = useState<string | null>(null);
 
   // The last search and its results stay until you search again.
   const loaded = useSavedState<Saved>(
@@ -54,12 +56,19 @@ export function JobFinder({ onSaved }: { onSaved?: (job: JobRecord) => void }) {
     },
   );
 
-  useEffect(() => {
+  function loadSavedJobs() {
     fetch("/api/jobs")
       .then((response) => response.json() as Promise<{ jobs: JobRecord[] }>)
       .then(({ jobs }) => setSavedJobs(new Map(jobs.filter((job) => job.url).map((job) => [job.url, job.id]))))
       .catch(() => {});
-  }, []);
+  }
+  useEffect(loadSavedJobs, []);
+
+  // Closing the drawer checks the list again, in case you deleted the job there.
+  function closeDrawer() {
+    setDrawerId(null);
+    loadSavedJobs();
+  }
 
   // With nothing saved yet, start from searches suggested from your profile.
   useEffect(() => {
@@ -141,6 +150,9 @@ export function JobFinder({ onSaved }: { onSaved?: (job: JobRecord) => void }) {
           url: job.url,
           description: job.description,
           notes: `Found on ${job.source}${job.salary ? `. Salary listed: ${job.salary}` : ""}.`,
+          source: job.source,
+          salary: job.salary,
+          postedAt: job.postedAt,
         }),
       });
       const data = (await response.json()) as { job?: JobRecord; error?: string; duplicateId?: string };
@@ -149,6 +161,8 @@ export function JobFinder({ onSaved }: { onSaved?: (job: JobRecord) => void }) {
       if (!id) throw new Error(data.error ?? "Couldn't save the job.");
       setSavedJobs((current) => new Map(current).set(job.url, id));
       if (data.job) onSaved?.(data.job);
+      // Open it right away, so you can prepare the application without leaving the results.
+      setDrawerId(id);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -381,11 +395,9 @@ export function JobFinder({ onSaved }: { onSaved?: (job: JobRecord) => void }) {
                         </div>
                         <div className="flex shrink-0 gap-1.5">
                           {savedId ? (
-                            <Button asChild size="sm" variant="outline">
-                              <Link href={`/jobs/${savedId}`}>
-                                <Check />
-                                Saved, open
-                              </Link>
+                            <Button size="sm" variant="outline" onClick={() => setDrawerId(savedId)}>
+                              <Check />
+                              Saved, open
                             </Button>
                           ) : (
                             <Button size="sm" disabled={saving === job.id} onClick={() => void save(job)}>
@@ -441,6 +453,8 @@ export function JobFinder({ onSaved }: { onSaved?: (job: JobRecord) => void }) {
           </CardContent>
         </Card>
       )}
+
+      <JobDrawer id={drawerId} onClose={closeDrawer} />
     </div>
   );
 }

@@ -32,6 +32,9 @@ export type FoundJob = {
   score: number;
   // With a saved search: true when this search hadn't shown the job before.
   isNew?: boolean;
+  // Added by the search route: the posting's keywords your profile does and doesn't mention, and the share it does.
+  keywords?: { found: string[]; missing: string[] };
+  fit?: number | null;
 };
 
 export type SourceResult = { name: SourceName; count: number; error?: string; skipped?: string };

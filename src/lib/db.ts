@@ -106,6 +106,9 @@ const ADDED_COLUMNS = [
   ["jobs", "email", "TEXT"],
   ["jobs", "contacts", "TEXT"],
   ["jobs", "offer", "TEXT"],
+  ["jobs", "source", "TEXT"],
+  ["jobs", "salary", "TEXT"],
+  ["jobs", "posted_at", "TEXT"],
 ] as const;
 
 function addColumns(database: DatabaseSync): void {
@@ -494,6 +497,10 @@ export type JobRecord = {
   email: JobEmail | null;
   contacts: JobContact[];
   offer: JobOffer | null;
+  // Where it was found (a job board's name) and what the posting said, for jobs saved from Find jobs.
+  source: string;
+  salary: string;
+  postedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -517,6 +524,9 @@ type JobRow = {
   email: string | null;
   contacts: string | null;
   offer: string | null;
+  source: string | null;
+  salary: string | null;
+  posted_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -550,6 +560,9 @@ function toJob(row: JobRow): JobRecord {
     email: parseJson(row.email, null),
     contacts: parseJson(row.contacts, []),
     offer: parseJson(row.offer, null),
+    source: row.source ?? "",
+    salary: row.salary ?? "",
+    postedAt: row.posted_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -559,8 +572,8 @@ export function insertJob(job: JobRecord): void {
   db()
     .prepare(
       `INSERT INTO jobs (id, title, company, location, url, description, status, notes, follow_up, history, fit, letter,
-         answers, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         answers, source, salary, posted_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       job.id,
@@ -576,6 +589,9 @@ export function insertJob(job: JobRecord): void {
       job.fit && JSON.stringify(job.fit),
       job.letter && JSON.stringify(job.letter),
       JSON.stringify(job.answers),
+      job.source,
+      job.salary,
+      job.postedAt,
       job.createdAt,
       job.updatedAt,
     );
@@ -608,6 +624,9 @@ const JOB_COLUMNS: Record<string, string> = {
   email: "email",
   contacts: "contacts",
   offer: "offer",
+  source: "source",
+  salary: "salary",
+  postedAt: "posted_at",
 };
 const JSON_JOB_FIELDS = ["history", "fit", "letter", "answers", "tailoredCv", "interview", "email", "contacts", "offer"];
 
