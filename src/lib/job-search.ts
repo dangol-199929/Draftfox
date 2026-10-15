@@ -49,10 +49,16 @@ type Found = Omit<FoundJob, "matched" | "score">;
 
 // --- Sources ---
 
-async function getJson<T>(url: string, headers: Record<string, string> = {}): Promise<T> {
-  const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT), headers: { Accept: "application/json", ...headers } });
+async function getJson<T>(url: string, headers: Record<string, string> = {}, timeout = TIMEOUT): Promise<T> {
+  const response = await fetch(url, { signal: AbortSignal.timeout(timeout), headers: { Accept: "application/json", ...headers } });
   if (response.status === 429) throw new Error("too many searches, or this month's free searches are used up; try again later");
-  if (response.status === 401 || response.status === 403) throw new Error("rejected the API key; check it in .env");
+  if (response.status === 401 || response.status === 403) {
+    const body = (await response.json().catch(() => ({}))) as { error?: unknown };
+    // Careerjet only answers the internet addresses registered in your partner account.
+    const ip = typeof body.error === "string" ? body.error.match(/from IP (\S+)/)?.[1] : undefined;
+    if (ip) throw new Error(`only accepts searches from addresses registered in your account; add ${ip} there`);
+    throw new Error("rejected the API key; check it in .env");
+  }
   if (!response.ok) throw new Error(`returned ${response.status}`);
   return (await response.json()) as T;
 }
@@ -180,6 +186,7 @@ type JSearchJob = {
   job_min_salary?: number | null;
   job_max_salary?: number | null;
   job_salary_currency?: string | null;
+  job_salary_string?: string | null;
 };
 
 export function jsearchConfigured(): boolean {
@@ -190,15 +197,18 @@ const JSEARCH_DATES: Record<string, string> = { "1": "today", "7": "week", "30":
 
 async function jsearch(query: string, input: SearchInput): Promise<Found[]> {
   const where = [input.place.trim(), findCountry(input.country)?.name].filter(Boolean).join(", ");
-  const params = new URLSearchParams({ query: where ? `${query} in ${where}` : query, page: "1", num_pages: "1" });
+  const params = new URLSearchParams({ query: where ? `${query} in ${where}` : query, num_pages: "1" });
   if (input.country) params.set("country", input.country === "gb" ? "uk" : input.country);
   if (input.postedWithin) params.set("date_posted", JSEARCH_DATES[input.postedWithin]);
   if (input.remoteOnly) params.set("work_from_home", "true");
-  const data = await getJson<{ data?: JSearchJob[] }>(`https://jsearch.p.rapidapi.com/search?${params}`, {
-    "X-RapidAPI-Key": process.env.JSEARCH_API_KEY ?? "",
-    "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
-  });
-  return (data.data ?? []).map((job) => {
+  // JSearch gathers results live from the job sites, so it can take longer than the others.
+  const data = await getJson<{ data?: { jobs?: JSearchJob[] } | JSearchJob[] }>(
+    `https://jsearch.p.rapidapi.com/search-v2?${params}`,
+    { "X-RapidAPI-Key": process.env.JSEARCH_API_KEY ?? "", "X-RapidAPI-Host": "jsearch.p.rapidapi.com" },
+    30_000,
+  );
+  const jobs = Array.isArray(data.data) ? data.data : (data.data?.jobs ?? []);
+  return jobs.map((job) => {
     const place = job.job_location || [job.job_city, job.job_state, job.job_country].filter(Boolean).join(", ");
     return {
       id: `jsearch:${job.job_id}`,
@@ -210,7 +220,7 @@ async function jsearch(query: string, input: SearchInput): Promise<Found[]> {
       url: job.job_apply_link || job.job_google_link || "",
       description: htmlToText(job.job_description ?? ""),
       postedAt: job.job_posted_at_datetime_utc ?? null,
-      salary: salaryText(job.job_min_salary, job.job_max_salary, job.job_salary_currency ?? undefined),
+      salary: job.job_salary_string || salaryText(job.job_min_salary, job.job_max_salary, job.job_salary_currency ?? undefined),
     };
   });
 }
