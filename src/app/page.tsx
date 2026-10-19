@@ -302,7 +302,7 @@ export default async function OverviewPage({
                 status={autopilot.settings.enabled ? (autopilot.settings.mode === "auto" ? "On, posts directly" : "On, saves drafts for review") : "Off"}
                 detail={
                   autopilot.settings.enabled && autopilot.state.nextRunAt
-                    ? `Next ${formatWhen(autopilot.state.nextRunAt)}`
+                    ? `Next ${formatWhen(autopilot.state.nextRunAt)}: ${autopilot.settings.topics[autopilot.state.nextTopic % Math.max(1, autopilot.settings.topics.length)] ?? ""}`
                     : `${autopilot.settings.topics.length} topic${autopilot.settings.topics.length === 1 ? "" : "s"} in the list`
                 }
                 href="/autopilot"

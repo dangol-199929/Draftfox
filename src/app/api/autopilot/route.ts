@@ -1,5 +1,5 @@
 import { readJsonObject } from "@/lib/api.ts";
-import { readAutopilot, runAutopilot, saveAutopilot, validateSettings } from "@/lib/autopilot.ts";
+import { readAutopilot, runAutopilot, saveAutopilot, setNextTopic, validateSettings } from "@/lib/autopilot.ts";
 import { getStatus } from "@/lib/linkedin.ts";
 import { startScheduler } from "@/lib/scheduler.ts";
 
@@ -33,4 +33,12 @@ export async function POST() {
   if (settings.topics.length === 0) return Response.json({ error: "Add at least one topic first." }, { status: 400 });
   const { post, result } = await runAutopilot(settings, "manual");
   return Response.json({ post, result, ...readAutopilot() }, { status: post ? 201 : 503 });
+}
+
+// Moves the queue: { nextTopic: <index> } makes that topic the next one written.
+export async function PATCH(request: Request) {
+  const body = await readJsonObject(request);
+  const result = setNextTopic(body?.nextTopic);
+  if (typeof result === "string") return Response.json({ error: result }, { status: 400 });
+  return Response.json(result);
 }

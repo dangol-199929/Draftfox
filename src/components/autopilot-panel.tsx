@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Bot, Loader2, Play, Save, TriangleAlert } from "lucide-react";
+import { Bot, Loader2, Play, RotateCcw, Save, TriangleAlert } from "lucide-react";
 import { formatWhen } from "@/components/post-editor";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toaster";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { AutopilotSettings, AutopilotState } from "@/lib/autopilot.ts";
 import { PALETTES, type Palette } from "@/lib/card-styles.ts";
@@ -43,7 +45,7 @@ export function AutopilotPanel({ onOpen }: { onOpen: (postId: string) => void })
   const [form, setForm] = useState<Form | null>(null);
   const [saved, setSaved] = useState<string>("");
   const [state, setState] = useState<AutopilotState | null>(null);
-  const [busy, setBusy] = useState<"" | "saving" | "running">("");
+  const [busy, setBusy] = useState<"" | "saving" | "running" | "moving">("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -65,6 +67,29 @@ export function AutopilotPanel({ onOpen }: { onOpen: (postId: string) => void })
   const dirty = JSON.stringify(form) !== saved;
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((current) => current && { ...current, [key]: value });
   const topicCount = fromForm(form).topics.length;
+  // The queue shows the saved list, since that's what the next run uses.
+  const savedTopics = fromForm(JSON.parse(saved) as Form).topics;
+  const nextIndex = savedTopics.length ? (state?.nextTopic ?? 0) % savedTopics.length : 0;
+
+  async function moveQueue(index: number) {
+    setBusy("moving");
+    setError("");
+    try {
+      const response = await fetch("/api/autopilot", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nextTopic: index }),
+      });
+      const data = (await response.json()) as { state?: AutopilotState; error?: string };
+      if (!response.ok || !data.state) throw new Error(data.error ?? `Request failed with status ${response.status}.`);
+      setState(data.state);
+      toast(`Posting next: topic ${index + 1}`);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
 
   async function save(next: Form) {
     setBusy("saving");
@@ -175,9 +200,63 @@ export function AutopilotPanel({ onOpen }: { onOpen: (postId: string) => void })
           <p className="text-xs text-muted-foreground">
             {topicCount === 0
               ? "Each run takes the next topic, then starts over at the top."
-              : `${topicCount} topic${topicCount === 1 ? "" : "s"}. Next up: “${fromForm(form).topics[(state?.nextTopic ?? 0) % topicCount]}”. Real details make better posts, so add a sentence of your own experience to each topic.`}
+              : `${topicCount} topic${topicCount === 1 ? "" : "s"}. Real details make better posts, so add a sentence of your own experience to each topic.`}
           </p>
         </div>
+
+        {savedTopics.length > 0 && (
+          <section aria-labelledby="queue-heading" className="grid min-w-0 gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 id="queue-heading" className="text-sm font-medium">
+                Queue
+              </h3>
+              <Button
+                variant="ghost"
+                size="xs"
+                disabled={busy !== "" || dirty || nextIndex === 0}
+                onClick={() => void moveQueue(0)}
+              >
+                <RotateCcw />
+                Start from the top
+              </Button>
+            </div>
+            <div className="rounded-lg border border-[color-mix(in_oklch,var(--brand),transparent_60%)] bg-brand-soft/60 px-3.5 py-3">
+              <p className="text-xs font-semibold tracking-wide text-brand-strong uppercase">
+                Posting next{form.enabled && state?.nextRunAt ? ` · ${formatWhen(state.nextRunAt)}` : ""}
+              </p>
+              <p className="mt-1 text-sm font-medium">
+                {nextIndex + 1}. {savedTopics[nextIndex]}
+              </p>
+            </div>
+            <ol className="grid max-h-72 min-w-0 grid-cols-1 divide-y overflow-y-auto rounded-lg border">
+              {savedTopics.map((topic, index) => {
+                const isNext = index === nextIndex;
+                return (
+                  <li key={`${index}-${topic}`} className={`group/topic flex min-w-0 items-center gap-3 px-3 py-2 text-sm ${isNext ? "bg-brand-soft/40" : ""}`}>
+                    <span className="w-6 shrink-0 text-right text-xs text-muted-foreground tabular-nums">{index + 1}</span>
+                    <span className="min-w-0 flex-1 truncate" title={topic}>
+                      {topic}
+                    </span>
+                    {isNext ? (
+                      <Badge variant="brand">Next</Badge>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        className="shrink-0 opacity-100 sm:opacity-0 sm:group-hover/topic:opacity-100 sm:focus-visible:opacity-100"
+                        disabled={busy !== "" || dirty}
+                        onClick={() => void moveQueue(index)}
+                      >
+                        Post this next
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+            {dirty && <p className="text-xs text-muted-foreground">Save your changes to update the queue.</p>}
+          </section>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="grid gap-2">

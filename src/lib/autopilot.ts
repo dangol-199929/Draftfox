@@ -117,6 +117,18 @@ export function saveAutopilot(settings: AutopilotSettings): { settings: Autopilo
   return { settings, state: next };
 }
 
+// Picks which topic the next run writes about. Returns an error message if the position is out of range.
+export function setNextTopic(index: unknown): { settings: AutopilotSettings; state: AutopilotState } | string {
+  const { settings, state } = readAutopilot();
+  if (settings.topics.length === 0) return "Add some topics first.";
+  if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index >= settings.topics.length) {
+    return `"nextTopic" must be a topic number from 0 to ${settings.topics.length - 1}.`;
+  }
+  const next = { ...state, nextTopic: index };
+  saveState(next);
+  return { settings, state: next };
+}
+
 // The next time the clock shows `time` (today if it's still ahead, otherwise tomorrow).
 export function firstRun(time: string, now = new Date()): string {
   const [hours, minutes] = time.split(":").map(Number);
