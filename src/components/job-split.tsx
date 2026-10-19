@@ -4,7 +4,7 @@
 // Indeed. On narrower screens there's only the list, and the selected job opens in a drawer.
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Maximize2 } from "lucide-react";
+import { Maximize2, MousePointerClick } from "lucide-react";
 import { FitScore, formatAge, JobStatusBadge } from "@/components/job-badges";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -55,8 +55,9 @@ export function JobListCard({ job, selected, onSelect }: { job: ListCardJob; sel
       onClick={onSelect}
       aria-current={selected || undefined}
       className={cn(
-        "grid w-full gap-1.5 rounded-lg border border-transparent px-3 py-3 text-left transition-colors hover:bg-muted/60",
-        selected && "border-brand/40 bg-brand-soft hover:bg-brand-soft",
+        "relative grid w-full gap-1.5 rounded-lg border border-transparent px-3 py-3 text-left transition-colors hover:bg-muted/60",
+        selected &&
+          "border-[color-mix(in_oklch,var(--brand),transparent_60%)] bg-brand-soft/70 before:absolute before:inset-y-3 before:left-0 before:w-[3px] before:rounded-r-full before:bg-brand hover:bg-brand-soft/70",
       )}
     >
       <span className="flex items-start justify-between gap-2">
@@ -104,8 +105,16 @@ export function SplitLayout({
           {open ? (
             detail
           ) : (
-            <div className="grid h-64 place-items-center rounded-xl border border-dashed text-sm text-muted-foreground">
-              Pick a job on the left to see it here.
+            <div className="grid h-72 place-items-center rounded-xl border border-dashed bg-surface/40 px-6 text-center">
+              <div className="grid justify-items-center gap-2">
+                <span className="grid size-10 place-items-center rounded-xl bg-brand-soft text-brand-strong">
+                  <MousePointerClick className="size-5" />
+                </span>
+                <p className="text-sm font-medium">Pick a job to see it here</p>
+                <p className="max-w-xs text-sm text-muted-foreground">
+                  Its fit with your profile, the cover letter and answers, and where you&apos;re up to.
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -138,7 +147,7 @@ export function DetailDrawer({
         side="right"
         className="w-full gap-0 overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:max-w-[min(64rem,94vw)]"
       >
-        <SheetHeader className="sticky top-0 z-10 flex-row items-center justify-between gap-2 border-b bg-popover/95 pr-12 backdrop-blur">
+        <SheetHeader className="sticky top-0 z-10 flex-row items-center justify-between gap-2 border-b bg-background/90 px-5 py-3.5 pr-14 backdrop-blur-md">
           <div className="grid min-w-0 gap-0.5">
             <SheetTitle className="truncate">{title}</SheetTitle>
             <SheetDescription>Changes save as you go. You always apply yourself.</SheetDescription>
@@ -152,7 +161,7 @@ export function DetailDrawer({
             </Button>
           )}
         </SheetHeader>
-        <div className="p-4">{open && children}</div>
+        <div className="p-4 sm:p-5">{open && children}</div>
       </SheetContent>
     </Sheet>
   );

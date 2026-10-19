@@ -199,25 +199,26 @@ export function ProfileEditor({
 
   return (
     <div className="grid gap-6">
-      <Card>
-        <CardContent className="grid gap-5 md:grid-cols-[minmax(0,1fr)_16rem] md:items-start">
-          <div className="flex min-w-0 items-start gap-4">
-            <Avatar className="size-16">
+      <Card className="pt-0">
+        <div
+          aria-hidden
+          className="h-20 border-b bg-[radial-gradient(120%_140%_at_0%_0%,color-mix(in_oklch,var(--brand),transparent_70%),transparent_60%),linear-gradient(180deg,var(--surface),var(--card))]"
+        />
+        <CardContent className="-mt-12 grid gap-5 md:grid-cols-[minmax(0,1fr)_17rem] md:items-end">
+          <div className="flex min-w-0 items-end gap-4">
+            <Avatar className="size-20 ring-4 ring-card">
               {linkedInProfile?.picture && <AvatarImage src={linkedInProfile.picture} alt="" />}
               <AvatarFallback className="bg-brand-soft text-lg font-medium">{initials(avatarName) || "?"}</AvatarFallback>
             </Avatar>
-            <div className="grid min-w-0 gap-1">
-              <p className="truncate text-lg font-semibold">{avatarName || "Your name"}</p>
+            <div className="grid min-w-0 gap-1 pb-0.5">
+              <p className="truncate text-lg font-semibold tracking-tight">{avatarName || "Your name"}</p>
               <p className={cn("text-sm", draft?.headline ? "text-muted-foreground" : "text-muted-foreground/70 italic")}>
                 {draft?.headline || "Add a headline in About me"}
               </p>
-              <div className="pt-2">
-                <LinkedInStatus status={linkedIn} />
-              </div>
             </div>
           </div>
           {draft && (
-            <div className="grid gap-2 rounded-lg border bg-muted/30 p-3">
+            <div className="grid gap-2 rounded-lg border bg-surface/60 p-3">
               <div className="flex items-center justify-between text-sm">
                 <span className="font-medium">Profile {percent}% complete</span>
               </div>
@@ -248,6 +249,10 @@ export function ProfileEditor({
               </p>
             </div>
           )}
+          <div className="grid gap-2 border-t pt-4 md:col-span-2">
+            <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">LinkedIn connection</p>
+            <LinkedInStatus status={linkedIn} />
+          </div>
         </CardContent>
       </Card>
 

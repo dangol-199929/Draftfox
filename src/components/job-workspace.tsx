@@ -795,7 +795,7 @@ function WritingPlaceholder({ what }: { what: string }) {
       </p>
       <div className="grid gap-2">
         {[92, 100, 85, 96, 60].map((width, i) => (
-          <div key={i} className="h-3 animate-pulse rounded bg-muted" style={{ width: `${width}%` }} />
+          <div key={i} className="h-3 skeleton rounded" style={{ width: `${width}%` }} />
         ))}
       </div>
     </div>

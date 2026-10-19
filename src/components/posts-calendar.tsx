@@ -165,7 +165,7 @@ export function PostsCalendar({
                 <div
                   key={day.toISOString()}
                   className={cn(
-                    "min-h-28 border-b p-1.5 [&:nth-child(7n)]:border-r-0",
+                    "min-h-28 min-w-0 overflow-hidden border-b p-1.5",
                     index % 7 !== 6 && "border-r",
                     outside && "bg-surface/50",
                     index >= days.length - 7 && "border-b-0",
@@ -183,7 +183,7 @@ export function PostsCalendar({
                       {day.getDate()}
                     </span>
                   </div>
-                  <ul className="grid gap-1">
+                  <ul className="grid min-w-0 grid-cols-1 gap-1">
                     {!posts &&
                       index % 5 === 2 && <li className="skeleton h-5 rounded" aria-hidden />}
                     {items.slice(0, 3).map((entry) => (

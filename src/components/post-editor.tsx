@@ -53,8 +53,8 @@ type Draft = Pick<PostRecord, "text" | "images" | "visibility">;
 export type PostStream = { text: string; running: boolean };
 
 const REWRITES = [
-  { action: "shorter", label: "Shorter" },
-  { action: "hook", label: "Punchier hook" },
+  { action: "shorter", label: "Make it shorter" },
+  { action: "hook", label: "Punchier opening" },
   { action: "personal", label: "More personal" },
   { action: "grammar", label: "Fix grammar" },
 ] as const;
@@ -106,6 +106,7 @@ export function PostEditor({
   const [rewriteError, setRewriteError] = useState("");
   const [undo, setUndo] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<"" | "draft" | "linkedin">("");
   const rewriteAbort = useRef<AbortController | null>(null);
   const lastSaved = useRef<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -308,7 +309,6 @@ export function PostEditor({
 
   const remove = () =>
     act("deleting", async () => {
-      if (!window.confirm("Delete this draft and its images? This can't be undone.")) return;
       lastSaved.current = draftJson; // nothing left to save
       await request(`/api/posts/${id}`, { method: "DELETE" });
       onDeleted();
@@ -316,7 +316,6 @@ export function PostEditor({
 
   const unpublish = () =>
     act("unpublishing", async () => {
-      if (!window.confirm("Delete this post from LinkedIn? The copy here stays.")) return;
       const { post: saved } = await request<{ post: PostRecord }>(`/api/posts/${id}/publish`, { method: "DELETE" });
       setPost(saved);
     });
@@ -382,10 +381,10 @@ export function PostEditor({
           </CardHeader>
           <CardContent className="grid gap-2">
             {stream?.running && !stream.text ? (
-              <div className="grid min-h-72 content-start gap-2.5 rounded-lg border p-3" aria-label="Writing your post">
+              <div className="ai-glow grid min-h-72 content-start gap-2.5 rounded-lg border bg-field p-3" aria-label="Writing your post">
                 {[92, 100, 85, 0, 96, 78, 100, 64].map((width, index) =>
                   width ? (
-                    <div key={index} className="h-3 animate-pulse rounded bg-muted" style={{ width: `${width}%` }} />
+                    <div key={index} className="skeleton h-3 rounded" style={{ width: `${width}%` }} />
                   ) : (
                     <div key={index} className="h-2" />
                   ),
@@ -394,7 +393,7 @@ export function PostEditor({
             ) : (
               <Textarea
                 aria-label="Post text"
-                className="min-h-72 leading-relaxed"
+                className={`min-h-72 text-[0.95rem] leading-relaxed md:text-[0.95rem] ${writing ? "ai-glow" : ""}`}
                 placeholder="Write your post…"
                 value={draft.text}
                 readOnly={!editable || writing}
@@ -414,8 +413,10 @@ export function PostEditor({
             </div>
             {editable && (
               <div className="flex flex-wrap items-center gap-1.5 border-t pt-3">
-                <Sparkles className="size-3.5 text-brand" aria-hidden />
-                <span className="sr-only">Quick rewrites:</span>
+                <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <Sparkles className="size-3.5 text-brand" aria-hidden />
+                  Rewrite with AI
+                </span>
                 {REWRITES.map((option) => (
                   <Button
                     key={option.action}
@@ -665,7 +666,13 @@ export function PostEditor({
                   </p>
                 </div>
 
-                <Button variant="ghost" size="sm" className="justify-self-start" disabled={busy !== ""} onClick={remove}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="justify-self-start text-muted-foreground hover:text-destructive"
+                  disabled={busy !== ""}
+                  onClick={() => setConfirmDelete("draft")}
+                >
                   <Trash2 />
                   Delete draft
                 </Button>
@@ -680,7 +687,7 @@ export function PostEditor({
                     View on LinkedIn
                   </a>
                 </Button>
-                <Button variant="ghost" size="sm" disabled={busy !== ""} onClick={unpublish}>
+                <Button variant="ghost" size="sm" disabled={busy !== ""} onClick={() => setConfirmDelete("linkedin")}>
                   {busy === "unpublishing" ? <Loader2 className="animate-spin" /> : <Trash2 />}
                   Delete from LinkedIn
                 </Button>
@@ -700,6 +707,34 @@ export function PostEditor({
           </CardContent>
         </Card>
       </div>
+
+      <AlertDialog open={confirmDelete !== ""} onOpenChange={(next) => !next && setConfirmDelete("")}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmDelete === "draft" ? "Delete this draft?" : "Delete this post from LinkedIn?"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDelete === "draft"
+                ? "The draft and its images are deleted from this computer. This can't be undone."
+                : "It's removed from your LinkedIn profile. The copy here stays, so you can post it again later."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                const which = confirmDelete;
+                setConfirmDelete("");
+                if (which === "draft") void remove();
+                else void unpublish();
+              }}
+            >
+              <Trash2 />
+              Delete
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={confirmOpen} onOpenChange={(next) => busy !== "publishing" && setConfirmOpen(next)}>
         <AlertDialogContent className="sm:max-w-lg">

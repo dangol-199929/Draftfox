@@ -140,7 +140,7 @@ export function PostsList({
               ))}
             </select>
           </label>
-          <Button disabled={creating !== ""} onClick={() => create()}>
+          <Button variant="outline" disabled={creating !== ""} onClick={() => create()}>
             {creating === "new" ? <Loader2 className="animate-spin" /> : <Plus />}
             Write my own
           </Button>

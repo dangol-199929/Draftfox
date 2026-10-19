@@ -61,7 +61,7 @@ export function QuickCopy() {
           {!profile ? (
             <div className="grid gap-2 p-1">
               {[0, 1, 2].map((i) => (
-                <div key={i} className="h-8 animate-pulse rounded bg-muted" />
+                <div key={i} className="h-8 skeleton rounded" />
               ))}
             </div>
           ) : filled.length === 0 ? (

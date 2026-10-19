@@ -10,7 +10,7 @@ import { getStatus } from "@/lib/linkedin.ts";
 import { RANGES, buildReport, isRange, type Range } from "@/lib/reports.ts";
 import { cn } from "@/lib/utils";
 
-export const metadata: Metadata = { title: "Reports" };
+export const metadata: Metadata = { title: "Activity" };
 
 const RANGE_LABELS: Record<Range, string> = { "7": "7 days", "30": "30 days", "90": "90 days", all: "All time" };
 
@@ -30,19 +30,20 @@ export default async function ReportsPage({
   return (
     <div className="grid gap-6">
       <PageHeader
-        title="Reports"
-        description="What you've done in this app, from the activity it keeps on this computer."
+        eyebrow="LinkedIn"
+        title="Activity"
+        description="What you've written and published, and how your job search is going, from the activity this app keeps on this computer."
       />
 
-      <nav aria-label="Time range" className="flex flex-wrap gap-1">
+      <nav aria-label="Time range" className="inline-flex w-fit max-w-full gap-1 overflow-x-auto rounded-lg border bg-surface p-1">
         {RANGES.map((value) => (
           <Link
             key={value}
             href={value === "30" ? "/reports" : `/reports?range=${value}`}
             aria-current={value === range ? "page" : undefined}
             className={cn(
-              "rounded-md border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-              value === range && "bg-muted text-foreground",
+              "rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground",
+              value === range && "bg-card text-foreground shadow-xs dark:bg-muted",
             )}
           >
             {RANGE_LABELS[value]}
@@ -263,10 +264,14 @@ function Stat({
     <Card size="sm">
       <CardContent className="grid gap-1">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-2xl font-semibold tabular-nums">{value}</p>
+        <p className="text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
         {diff !== null && change && (
           <p className="text-xs text-muted-foreground">
-            {diff === 0 ? "Same as" : `${diff > 0 ? "+" : "−"}${Math.abs(diff)} vs`} {change.period}
+            <span className={cn("font-medium", diff > 0 && "text-success", diff < 0 && "text-foreground")}>
+              {diff === 0 ? "Same as" : `${diff > 0 ? "+" : "−"}${Math.abs(diff)}`}
+            </span>{" "}
+            {diff === 0 ? "" : "vs "}
+            {change.period}
           </p>
         )}
         {note && <p className="text-xs text-muted-foreground">{note}</p>}
@@ -288,7 +293,7 @@ function Breakdown({ title, rows }: { title: string; rows: { label: string; coun
             </span>
             <span className="h-2 rounded-full bg-muted">
               <span
-                className="block h-full rounded-full bg-chart-2"
+                className="block h-full rounded-full bg-chart-1"
                 style={{ width: `${(row.count / max) * 100}%` }}
               />
             </span>
@@ -314,7 +319,7 @@ function MonthBars({ months, unit = "post" }: { months: { month: string; label: 
           >
             {month.count > 0 && (
               <span
-                className="w-full max-w-6 rounded-t-[3px] bg-chart-2 group-hover:bg-foreground"
+                className="w-full max-w-6 rounded-t-[3px] bg-chart-1 group-hover:bg-brand-strong"
                 style={{ height: `${(month.count / max) * 100}%` }}
               />
             )}

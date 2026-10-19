@@ -23,7 +23,7 @@ export default async function OffersPage() {
         <Link href="/jobs" className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="size-3.5" /> All jobs
         </Link>
-        <PageHeader title="Compare offers" description="The offer details you added to each job, side by side." />
+        <PageHeader eyebrow="Career" title="Compare offers" description="The offer details you added to each job, side by side." />
       </div>
       <Card>
         <CardContent>

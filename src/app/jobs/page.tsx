@@ -10,8 +10,9 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   return (
     <div className="grid gap-6">
       <PageHeader
+        eyebrow="Career"
         title="Jobs"
-        description="Find jobs that match your profile or add one you found, see how each fits, draft a cover letter and answers, and track where you applied. You always apply yourself."
+        description="Find roles that match your profile, see how each one fits, prepare a cover letter and answers, and track where you're up to. You always apply yourself."
       />
       <QuickCopy />
       <JobsBoard initialTab={tab === "find" ? "find" : "mine"} initialJob={typeof job === "string" ? job : null} />

@@ -351,7 +351,7 @@ function QuickAction({
     <Link
       href={href}
       className={cn(
-        "group/qa relative grid gap-3 overflow-hidden rounded-xl border bg-card p-4 shadow-card transition-[border-color,box-shadow,transform] hover:-translate-y-px hover:border-[color-mix(in_oklch,var(--brand),var(--border)_60%)] hover:shadow-pop focus-visible:outline-2 focus-visible:outline-offset-2",
+        "group/qa relative grid content-start gap-3 overflow-hidden rounded-xl border bg-card p-4 shadow-card transition-[border-color,box-shadow,transform] hover:-translate-y-px hover:border-[color-mix(in_oklch,var(--brand),var(--border)_60%)] hover:shadow-pop focus-visible:outline-2 focus-visible:outline-offset-2",
         primary && "border-[color-mix(in_oklch,var(--brand),var(--border)_65%)] bg-[linear-gradient(135deg,var(--brand-soft),var(--card)_70%)]",
       )}
     >

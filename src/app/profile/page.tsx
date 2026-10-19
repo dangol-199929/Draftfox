@@ -5,7 +5,7 @@ import { ProfileEditor, type ProfileTab } from "@/components/profile-editor";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getStatus } from "@/lib/linkedin.ts";
 
-export const metadata: Metadata = { title: "Profile" };
+export const metadata: Metadata = { title: "Profile & connection" };
 
 const ERRORS: Record<string, string> = {
   not_configured: "LinkedIn isn't set up yet. Add your app's Client ID and secret first (see How to set it up).",
@@ -45,11 +45,12 @@ export default async function ProfilePage({
   return (
     <div className="grid gap-6">
       <PageHeader
-        title="Profile"
-        description="Facts about you, your CV and examples of your writing, so posts and applications sound like you without inventing anything. Everything stays on this computer."
+        eyebrow="LinkedIn"
+        title="Profile & connection"
+        description="Your LinkedIn connection, the facts about you, your CV and examples of your writing, so posts and applications sound like you without inventing anything. Everything stays on this computer."
       />
       {justConnected && (
-        <Alert>
+        <Alert variant="success">
           <CheckCircle2 />
           <AlertTitle>LinkedIn connected</AlertTitle>
           <AlertDescription>

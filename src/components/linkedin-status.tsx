@@ -163,10 +163,10 @@ function Chip({ state, children }: { state: "on" | "off" | "warn"; children: Rea
   return (
     <span
       className={cn(
-        "inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium",
-        state === "on" && "border-transparent bg-brand-soft text-foreground [&_svg]:text-brand",
-        state === "off" && "text-muted-foreground",
-        state === "warn" && "border-destructive/30 text-destructive",
+        "inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-xs font-medium",
+        state === "on" && "border-success/25 bg-success-soft text-success",
+        state === "off" && "bg-surface text-muted-foreground",
+        state === "warn" && "border-warning/30 bg-warning-soft text-warning",
       )}
     >
       <Icon className="size-3.5" />

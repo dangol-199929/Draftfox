@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BadgeDollarSign, CalendarClock, CircleAlert, ClipboardPaste, Columns3, Download, List, Loader2, Plus, Search, X } from "lucide-react";
+import { BadgeDollarSign, BriefcaseBusiness, CalendarClock, CircleAlert, ClipboardPaste, Columns3, Download, List, Loader2, Plus, Search, X } from "lucide-react";
 import { formatDay, JobStatusBadge, MatchBadge, STATUS_LABELS } from "@/components/job-badges";
 import { JobDrawer } from "@/components/job-drawer";
 import { JobFinder } from "@/components/job-finder";
@@ -230,10 +230,10 @@ export function JobsBoard({ initialTab = "mine", initialJob = null }: { initialT
         </Alert>
       )}
 
-      <div className="flex flex-wrap gap-1 border-b" role="tablist" aria-label="Jobs">
+      <div className="inline-flex w-fit max-w-full gap-1 overflow-x-auto rounded-lg border bg-surface p-1" role="tablist" aria-label="Jobs">
         {(
           [
-            ["mine", `Your jobs${jobs ? ` (${jobs.length})` : ""}`],
+            ["mine", `Applications${jobs ? ` (${jobs.length})` : ""}`],
             ["find", "Find jobs"],
           ] as const
         ).map(([value, label]) => (
@@ -243,11 +243,11 @@ export function JobsBoard({ initialTab = "mine", initialJob = null }: { initialT
             aria-selected={tab === value}
             onClick={() => showTab(value)}
             className={cn(
-              "-mb-px border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground",
-              tab === value && "border-foreground font-medium text-foreground",
+              "inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground",
+              tab === value && "bg-card text-foreground shadow-xs dark:bg-muted [&_svg]:text-brand",
             )}
           >
-            {value === "find" && <Search className="mr-1.5 inline size-3.5" />}
+            {value === "find" ? <Search className="size-3.5" /> : <BriefcaseBusiness className="size-3.5" />}
             {label}
           </button>
         ))}
@@ -363,12 +363,12 @@ export function JobsBoard({ initialTab = "mine", initialJob = null }: { initialT
 
       <section className="grid gap-3" aria-labelledby="your-jobs-heading">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 id="your-jobs-heading" className="text-base font-semibold">
-            Your jobs
+          <h2 id="your-jobs-heading" className="text-base font-semibold tracking-tight">
+            Your applications
           </h2>
           <div className="flex flex-wrap items-center gap-2">
             {wide && (
-              <div className="inline-flex rounded-lg bg-muted p-0.5" role="group" aria-label="View">
+              <div className="inline-flex rounded-lg border bg-surface p-0.5" role="group" aria-label="View">
                 {(
                   [
                     ["list", "List", List],
@@ -382,7 +382,7 @@ export function JobsBoard({ initialTab = "mine", initialJob = null }: { initialT
                     onClick={() => changeView(value)}
                     className={cn(
                       "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground",
-                      view === value && "bg-background text-foreground shadow-sm dark:bg-input/40",
+                      view === value && "bg-card text-foreground shadow-xs dark:bg-muted",
                     )}
                   >
                     <Icon className="size-3.5" />
@@ -408,13 +408,16 @@ export function JobsBoard({ initialTab = "mine", initialJob = null }: { initialT
         {!jobs && !error && (
           <div className="grid gap-2" aria-label="Loading your jobs">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="h-16 animate-pulse rounded-lg bg-muted" />
+              <div key={i} className="skeleton h-16 rounded-lg" />
             ))}
           </div>
         )}
         {jobs && jobs.length === 0 && (
-          <div className="grid justify-items-center gap-3 rounded-xl border border-dashed px-4 py-10 text-center">
-            <p className="text-sm font-medium">No jobs yet</p>
+          <div className="grid justify-items-center gap-3 rounded-xl border border-dashed bg-surface/40 px-4 py-12 text-center">
+            <span className="grid size-11 place-items-center rounded-xl bg-brand-soft text-brand-strong">
+              <BriefcaseBusiness className="size-5" />
+            </span>
+            <p className="text-sm font-semibold">No jobs yet</p>
             <p className="max-w-sm text-sm text-muted-foreground">
               Find jobs that match your profile, or paste one you found on LinkedIn, SEEK or a company&apos;s site.
             </p>
