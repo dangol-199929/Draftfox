@@ -88,7 +88,7 @@ export default async function ReportsPage({
           {report.empty ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               Nothing yet in this period.{" "}
-              <Link href="/" className="underline underline-offset-2 hover:text-foreground">
+              <Link href="/write" className="underline underline-offset-2 hover:text-foreground">
                 Generate a draft
               </Link>{" "}
               and it will show up here.

@@ -8,9 +8,8 @@ const nextConfig: NextConfig = {
   // Pages that moved into a section of the app; old links and bookmarks still work.
   async redirects() {
     return [
-      { source: "/posts", destination: "/", permanent: false },
-      { source: "/posts/:id", destination: "/?post=:id", permanent: false },
-      { source: "/prompt", destination: "/settings", permanent: false },
+      { source: "/posts/:id", destination: "/posts?post=:id", permanent: false },
+      { source: "/prompt", destination: "/instructions", permanent: false },
       { source: "/linkedin", destination: "/profile", permanent: false },
     ];
   },

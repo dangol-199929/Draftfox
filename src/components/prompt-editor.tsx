@@ -90,28 +90,29 @@ export function PromptEditor() {
 
       <Card>
         <CardHeader>
-          <CardTitle>System prompt</CardTitle>
-          <CardDescription>Sent to the model before every post request.</CardDescription>
+          <CardTitle>Writing instructions</CardTitle>
+          <CardDescription>Sent to the model before every post. Saved for all future posts.</CardDescription>
           {saved && (
             <CardAction>
-              <Badge variant={saved.isDefault ? "secondary" : "outline"}>
-                {saved.isDefault ? "Default" : "Custom"}
+              <Badge variant={saved.isDefault ? "muted" : "brand"}>
+                {saved.isDefault ? "Built-in" : "Customised"}
               </Badge>
             </CardAction>
           )}
         </CardHeader>
         <CardContent className="grid gap-3">
           {saved === null && !error ? (
-            <p className="flex items-center justify-center gap-2 py-24 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" />
-              Loading prompt…
-            </p>
+            <div className="grid gap-2.5 py-2" aria-label="Loading instructions">
+              {[70, 95, 88, 0, 60, 92, 80, 0, 50, 85].map((width, index) =>
+                width ? <span key={index} className="skeleton h-3 rounded" style={{ width: `${width}%` }} /> : <span key={index} className="h-2" />,
+              )}
+            </div>
           ) : (
             <>
               <Textarea
-                aria-label="System prompt"
+                aria-label="Writing instructions"
                 spellCheck={false}
-                className="min-h-96 max-h-[70vh] overflow-y-auto font-mono text-xs leading-relaxed md:text-xs"
+                className="min-h-[28rem] max-h-[70vh] overflow-y-auto bg-surface/40 font-mono text-[0.8rem] leading-relaxed md:text-[0.8rem]"
                 value={draft}
                 disabled={saved === null}
                 onChange={(event) => setDraft(event.target.value)}
@@ -120,12 +121,13 @@ export function PromptEditor() {
                 <span>
                   {draft.length.toLocaleString("en")} characters · {words.toLocaleString("en")} words
                 </span>
-                {dirty && <span className="text-foreground">Unsaved changes</span>}
+                {dirty && (
+                  <span className="inline-flex items-center gap-1.5 font-medium text-warning">
+                    <span className="size-1.5 rounded-full bg-current" />
+                    Unsaved changes (kept until you save or discard)
+                  </span>
+                )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Tip: keep the &apos;NEED MORE CONTEXT:&apos; instruction if you want the model to ask questions when
-                a topic is too vague.
-              </p>
 
               <div className="flex flex-wrap gap-2 pt-1">
                 <Button disabled={!dirty || busy !== null || !draft.trim()} onClick={() => update("PUT")}>
@@ -140,7 +142,7 @@ export function PromptEditor() {
                       Saved
                     </>
                   ) : (
-                    "Save"
+                    "Save instructions"
                   )}
                 </Button>
                 <Button

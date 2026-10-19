@@ -15,7 +15,7 @@ export function CommandLine({ command }: { command: string }) {
   }
 
   return (
-    <div className="mt-2 flex items-center gap-1 rounded-md bg-muted pl-3 text-foreground">
+    <div className="mt-2 flex items-center gap-1 rounded-md border bg-surface pl-3 text-foreground">
       <code className="min-w-0 flex-1 overflow-x-auto py-1.5 font-mono text-xs whitespace-nowrap">{command}</code>
       <Button variant="ghost" size="icon-sm" aria-label={`Copy "${command}"`} onClick={copy}>
         {copied ? <Check /> : <Copy />}

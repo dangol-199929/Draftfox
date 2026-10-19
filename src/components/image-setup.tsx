@@ -46,7 +46,7 @@ export function ImageSetup() {
         {engine && (
           <div className="flex items-start gap-3 rounded-lg border p-3">
             {engine.ready ? (
-              <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-brand" />
+              <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
             ) : (
               <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" />
             )}

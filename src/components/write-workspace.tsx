@@ -1,19 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Bot, Eraser, FileText, Info, Loader2, PencilLine, Sparkles } from "lucide-react";
-import { AutopilotPanel } from "@/components/autopilot-panel";
+import { CalendarDays, Eraser, Info, Library, Loader2, PencilLine, Sparkles, Square, UserRound } from "lucide-react";
 import { CommandLine } from "@/components/command-line";
-import { PostEditor, type PostStream } from "@/components/post-editor";
+import { PostDrawer, usePostDrawer } from "@/components/post-drawer";
+import type { PostStream } from "@/components/post-editor";
 import { PostsList } from "@/components/posts-list";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { PostRecord } from "@/lib/db.ts";
@@ -21,6 +18,7 @@ import type { GenerationSnapshot } from "@/lib/generation.ts";
 import type { Profile } from "@/lib/profile.ts";
 import type { PostInput } from "@/lib/prompts.ts";
 import { useSavedState } from "@/lib/use-saved-state.ts";
+import { cn } from "@/lib/utils";
 
 type Length = NonNullable<PostInput["length"]>;
 
@@ -47,10 +45,8 @@ const LENGTHS: { value: Length; label: string }[] = [
   { value: "long", label: "Long" },
 ];
 
-type Tab = "posts" | "schedule";
-
-// The Write page: the generate box, your posts, automatic posting, and the post editor in a drawer.
-export function WriteWorkspace({ initialPost, initialTab }: { initialPost: string | null; initialTab: Tab }) {
+// The Studio: the AI composer, your latest posts, and the post editor in a drawer.
+export function WriteWorkspace({ initialPost }: { initialPost: string | null }) {
   const [topic, setTopic] = useState("");
   const [experience, setExperience] = useState("");
   const [audience, setAudience] = useState("");
@@ -62,13 +58,12 @@ export function WriteWorkspace({ initialPost, initialTab }: { initialPost: strin
   const [generationId, setGenerationId] = useState<string | null>(null);
   // The draft being written by the model, and what it has written so far.
   const [stream, setStream] = useState<(PostStream & { postId: string }) | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>(initialTab);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [updated, setUpdated] = useState<PostRecord | null>(null);
   const [profileNote, setProfileNote] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const experienceRef = useRef<HTMLTextAreaElement>(null);
+  const drawer = usePostDrawer("/write", initialPost);
+  const open = drawer.open;
 
   const running = stream?.running ?? false;
 
@@ -101,38 +96,10 @@ export function WriteWorkspace({ initialPost, initialTab }: { initialPost: strin
       .catch(() => setProfileNote(null));
   }, []);
 
-  const setUrl = useCallback((postId: string | null, nextTab: Tab) => {
-    const params = new URLSearchParams();
-    if (postId) params.set("post", postId);
-    if (nextTab === "schedule") params.set("tab", "schedule");
-    const query = params.toString();
-    window.history.replaceState(null, "", query ? `/?${query}` : "/");
-  }, []);
-
-  const open = useCallback(
-    (postId: string) => {
-      setOpenId(postId);
-      setUrl(postId, "posts");
-    },
-    [setUrl],
-  );
-
-  // Links like /?post=<id> (from automatic posting or the Jobs page) open that post.
-  useEffect(() => {
-    if (initialPost) open(initialPost);
-  }, [initialPost, open]);
-
   function close() {
-    setOpenId(null);
+    drawer.close();
     // A finished stream has done its job; reopening the post shows what was saved, edits included.
     setStream((current) => (current?.running ? current : null));
-    setUrl(null, tab);
-    setRefreshKey((key) => key + 1);
-  }
-
-  function changeTab(next: string) {
-    setTab(next as Tab);
-    setUrl(openId, next as Tab);
   }
 
   function track() {
@@ -198,10 +165,8 @@ export function WriteWorkspace({ initialPost, initialTab }: { initialPost: strin
   async function failed(postId: string, problem: GenerateError) {
     await fetch(`/api/posts/${postId}`, { method: "DELETE" }).catch(() => {});
     setStream(null);
-    setOpenId((current) => (current === postId ? null : current));
-    setUrl(null, tab);
+    drawer.closeIf(postId);
     setError(problem);
-    setRefreshKey((key) => key + 1);
   }
 
   // Streams a server-side generation into the draft (from its start), then applies how it ended.
@@ -275,104 +240,77 @@ export function WriteWorkspace({ initialPost, initialTab }: { initialPost: strin
     setQuestions(null);
   }
 
+  const hasInput = Boolean(topic || experience || audience || tone);
+
   return (
-    <div className="grid gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Sparkles className="size-4 text-brand" />
+    <div className="grid gap-8">
+      <section
+        aria-labelledby="composer-heading"
+        className={cn(
+          "overflow-hidden rounded-2xl border bg-card shadow-card transition-shadow",
+          (running || starting) && "ai-glow",
+        )}
+      >
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-surface/60 px-5 py-3">
+          <span className="grid size-7 place-items-center rounded-md bg-brand-soft text-brand-strong">
+            <Sparkles className="size-4" />
+          </span>
+          <h2 id="composer-heading" className="text-sm font-semibold tracking-tight">
             Write a post with AI
-          </CardTitle>
-          <CardDescription>
-            Only the topic is required. The post opens in the editor as it&apos;s written and is saved as a draft.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form
-            className="grid gap-5"
-            onSubmit={(event) => {
+          </h2>
+          <p className="text-xs text-muted-foreground">Only the topic is required. The draft opens as it&apos;s written.</p>
+        </div>
+        <form
+          className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_18rem]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
               event.preventDefault();
               submit();
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault();
-                submit();
-              }
-            }}
-          >
-            <div className="grid gap-5 lg:grid-cols-2">
-              <div className="grid content-start gap-5">
-                <div className="grid gap-2">
-                  <Label htmlFor="topic">Topic</Label>
-                  <Input
-                    id="topic"
-                    required
-                    value={topic}
-                    onChange={(event) => setTopic(event.target.value)}
-                    placeholder="e.g. What I learned from using Docker"
-                  />
-                </div>
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <div className="grid gap-2">
-                    <Label htmlFor="audience">Audience</Label>
-                    <Input
-                      id="audience"
-                      value={audience}
-                      onChange={(event) => setAudience(event.target.value)}
-                      placeholder="e.g. Software developers"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="tone">Tone</Label>
-                    <Input
-                      id="tone"
-                      value={tone}
-                      onChange={(event) => setTone(event.target.value)}
-                      placeholder="e.g. Casual and technical"
-                    />
-                  </div>
-                </div>
-                <div className="grid gap-2">
-                  <Label id="length-label">Length</Label>
-                  <ToggleGroup
-                    type="single"
-                    variant="outline"
-                    aria-labelledby="length-label"
-                    value={length}
-                    onValueChange={(value) => value && setLength(value as Length)}
-                  >
-                    {LENGTHS.map((option) => (
-                      <ToggleGroupItem key={option.value} value={option.value}>
-                        {option.label}
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
-                </div>
-              </div>
-              <div className="grid content-start gap-2">
-                <Label htmlFor="experience">Your experience</Label>
-                <Textarea
-                  id="experience"
-                  ref={experienceRef}
-                  rows={6}
-                  className="lg:min-h-44"
-                  value={experience}
-                  onChange={(event) => setExperience(event.target.value)}
-                  placeholder="e.g. I spent several hours debugging Docker networking."
-                />
-                <p className="text-xs text-muted-foreground">
-                  Only what really happened. The post won&apos;t invent anything beyond this.
-                </p>
-              </div>
+            }
+          }}
+        >
+          <div className="grid content-start gap-5 p-5">
+            <div className="grid gap-2">
+              <Label htmlFor="topic" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Topic
+              </Label>
+              <Input
+                id="topic"
+                required
+                value={topic}
+                onChange={(event) => setTopic(event.target.value)}
+                placeholder="What do you want to post about?"
+                className="h-11 text-base md:text-base"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="experience" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                What really happened
+              </Label>
+              <Textarea
+                id="experience"
+                ref={experienceRef}
+                rows={5}
+                className="min-h-32 leading-relaxed"
+                value={experience}
+                onChange={(event) => setExperience(event.target.value)}
+                placeholder="e.g. I spent several hours debugging Docker networking. The fix was one line."
+              />
+              <p className="text-xs text-muted-foreground">
+                The post sticks to what you write here and in your profile. It won&apos;t invent results or numbers.
+              </p>
             </div>
 
             {questions && (
-              <Alert>
+              <Alert variant="info">
                 <Info />
-                <AlertTitle>The model needs more context</AlertTitle>
+                <AlertTitle>The model needs a bit more to go on</AlertTitle>
                 <AlertDescription>
-                  <p>Answer these in “Your experience”, then generate again:</p>
+                  <p>Answer these in “What really happened”, then generate again:</p>
                   <ul className="mt-1 list-disc space-y-1 pl-5">
                     {questions.map((question) => (
                       <li key={question}>{question}</li>
@@ -386,89 +324,130 @@ export function WriteWorkspace({ initialPost, initialTab }: { initialPost: strin
               </Alert>
             )}
             {error && error.message && <ErrorAlert error={error} />}
+          </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {running ? (
-                <>
-                  <Button type="button" variant="outline" onClick={() => stream && open(stream.postId)}>
-                    <Loader2 className="animate-spin" />
-                    Writing… open the draft
-                  </Button>
-                  <Button type="button" variant="ghost" onClick={stop}>
-                    Stop
-                  </Button>
-                </>
-              ) : (
-                <Button type="submit" disabled={!canGenerate}>
-                  {starting ? <Loader2 className="animate-spin" /> : <Sparkles />}
-                  Generate
-                </Button>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={!restored || running || !(topic || experience || audience || tone)}
-                onClick={clear}
+          <div className="grid content-start gap-5 border-t bg-surface/40 p-5 lg:border-t-0 lg:border-l">
+            <div className="grid gap-2">
+              <Label htmlFor="audience">Audience</Label>
+              <Input
+                id="audience"
+                value={audience}
+                onChange={(event) => setAudience(event.target.value)}
+                placeholder="e.g. Software developers"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="tone">Tone</Label>
+              <Input
+                id="tone"
+                value={tone}
+                onChange={(event) => setTone(event.target.value)}
+                placeholder="e.g. Casual and technical"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label id="length-label">Length</Label>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                aria-labelledby="length-label"
+                className="w-full"
+                value={length}
+                onValueChange={(value) => value && setLength(value as Length)}
               >
-                <Eraser />
-                Clear
-              </Button>
-              {profileNote !== null && (
-                <p className="ml-auto text-xs text-muted-foreground">
-                  {profileNote ? `${profileNote} · ` : "Add your profile for more personal posts · "}
-                  <Link href="/profile" className="underline underline-offset-2 hover:text-foreground">
-                    {profileNote ? "Edit" : "Add profile"}
+                {LENGTHS.map((option) => (
+                  <ToggleGroupItem key={option.value} value={option.value} className="flex-1">
+                    {option.label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </div>
+            {profileNote !== null && (
+              <div className="flex items-start gap-2 rounded-lg border bg-card px-3 py-2.5 text-xs">
+                <UserRound className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                <p className="text-muted-foreground">
+                  {profileNote || "No profile yet, so posts are less personal."}{" "}
+                  <Link href="/profile" className="font-medium text-foreground underline underline-offset-2">
+                    {profileNote ? "Edit profile" : "Add profile"}
+                  </Link>
+                  {" · "}
+                  <Link href="/instructions" className="font-medium text-foreground underline underline-offset-2">
+                    AI instructions
                   </Link>
                 </p>
-              )}
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-
-      <Tabs value={tab} onValueChange={changeTab}>
-        <TabsList aria-label="Posts or automatic posting">
-          <TabsTrigger value="posts">
-            <FileText />
-            Drafts &amp; scheduled
-          </TabsTrigger>
-          <TabsTrigger value="schedule">
-            <Bot />
-            Automatic posting
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="posts">
-          <PostsList onOpen={open} refreshKey={refreshKey} updated={updated} activeId={openId} />
-        </TabsContent>
-        <TabsContent value="schedule">
-          <AutopilotPanel onOpen={open} />
-        </TabsContent>
-      </Tabs>
-
-      <Sheet open={openId !== null} onOpenChange={(next) => !next && close()}>
-        <SheetContent
-          side="right"
-          className="w-full gap-0 overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:max-w-[min(72rem,94vw)]"
-        >
-          <SheetHeader className="sticky top-0 z-10 border-b bg-popover/95 pr-12 backdrop-blur">
-            <SheetTitle>Edit post</SheetTitle>
-            <SheetDescription>Nothing is posted unless you choose to.</SheetDescription>
-          </SheetHeader>
-          <div className="p-4">
-            {openId && (
-              <PostEditor
-                key={openId}
-                id={openId}
-                stream={stream?.postId === openId ? stream : null}
-                onStop={stop}
-                onDeleted={close}
-                onOpen={open}
-                onChange={setUpdated}
-              />
+              </div>
             )}
           </div>
-        </SheetContent>
-      </Sheet>
+
+          <div className="flex flex-wrap items-center gap-2 border-t px-5 py-3.5 lg:col-span-2">
+            {running ? (
+              <>
+                <Button type="button" variant="brand" onClick={() => stream && open(stream.postId)}>
+                  <Loader2 className="animate-spin" />
+                  Writing your draft… open it
+                </Button>
+                <Button type="button" variant="ghost" onClick={stop}>
+                  <Square />
+                  Stop
+                </Button>
+              </>
+            ) : (
+              <Button type="submit" size="lg" disabled={!canGenerate}>
+                {starting ? <Loader2 className="animate-spin" /> : <Sparkles />}
+                Generate draft
+              </Button>
+            )}
+            <kbd className="hidden rounded border bg-surface px-1.5 py-0.5 font-mono text-[0.7rem] text-muted-foreground sm:inline">
+              ⌘ ↵
+            </kbd>
+            <Button
+              type="button"
+              variant="ghost"
+              className="ml-auto"
+              disabled={!restored || running || !hasInput}
+              onClick={clear}
+            >
+              <Eraser />
+              Clear
+            </Button>
+          </div>
+        </form>
+      </section>
+
+      <section aria-labelledby="recent-heading" className="grid gap-3">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div className="grid gap-0.5">
+            <h2 id="recent-heading" className="text-base font-semibold tracking-tight">
+              Recent posts
+            </h2>
+            <p className="text-sm text-muted-foreground">Your latest drafts and scheduled posts.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/calendar">
+                <CalendarDays />
+                Calendar
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/posts">
+                <Library />
+                All posts
+              </Link>
+            </Button>
+          </div>
+        </div>
+        <PostsList onOpen={open} refreshKey={drawer.closedCount} updated={updated} activeId={drawer.openId} limit={5} />
+      </section>
+
+      <PostDrawer
+        openId={drawer.openId}
+        onClose={close}
+        onOpen={open}
+        onChange={setUpdated}
+        stream={stream}
+        onStop={stop}
+      />
     </div>
   );
 }
