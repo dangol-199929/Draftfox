@@ -29,13 +29,27 @@ Then open http://localhost:3000.
 
 ## Pages
 
-- **Generate** (`/`): enter a topic, your real experience, audience, tone and length. The post streams in as the model writes it; you can stop it, edit it, copy it or regenerate it. If the topic is too vague, the model asks a few questions instead of inventing details.
-- **Posts** (`/posts`): a post editor with your own or generated images (with alt text), drafts saved as you type, Post now, Post later at a chosen time, and automatic posting. See below.
-- **Profile** (`/profile`): optional facts about you and examples of your past posts, so drafts sound like you. Fill it in by hand or import your LinkedIn data (see below).
-- **Prompt** (`/prompt`): edit the system prompt, the standing rules the model follows for every post. Save, discard changes, or reset to the built-in default.
-- **LinkedIn** (`/linkedin`): connect your LinkedIn account with Sign In with LinkedIn, and optionally enable posting. See below.
-- **Reports** (`/reports`): drafts generated, copied and posted over the last 7, 30 or 90 days or all time, with a chart, the lengths and tones you use, recent activity and links to the posts you published. See below.
-- **Jobs** (`/jobs`): find jobs that match your profile or paste one you found, see how it fits, and draft a cover letter and answers to application questions. See below.
+The sidebar groups the pages by what you're doing. On phones, the four used most are in the bottom bar and the rest are under More.
+
+**Create**
+- **Overview** (`/`): what needs you today: drafts in progress, what's scheduled, posts that didn't go out, job follow-ups this week, and whether Ollama, LinkedIn and auto-posting are ready. A short getting-started list shows until the basics are set up.
+- **Studio** (`/write`): enter a topic, what really happened, audience, tone and length. The post streams into the editor as the model writes it; you can stop it, edit it, rewrite it (shorter, punchier opening, more personal, fix grammar), add images, and post or schedule it. If the topic is too vague, the model asks a few questions instead of inventing details.
+- **Posts** (`/posts`): every draft, scheduled, posted and failed post, with search, filters, sorting and duplicate. Opening one shows the editor. See below.
+- **Calendar** (`/calendar`): a month view of scheduled, posted and failed posts and the next auto-post, with drafts waiting to be scheduled. Phones get a list instead of a grid.
+- **Auto-posting** (`/autopilot`): write a post from your topic list on a schedule, and save it for review or post it straight away.
+
+**LinkedIn**
+- **Profile & connection** (`/profile`): connect LinkedIn (and optionally enable posting), plus facts about you, your CV and examples of your past posts, so drafts sound like you. Fill it in by hand or import your LinkedIn data (see below).
+- **Activity** (`/reports`): drafts generated, copied and posted over the last 7, 30 or 90 days or all time, with a chart, the lengths and tones you use, recent activity, links to the posts you published, and your job search numbers. See below.
+
+**Career**
+- **Find jobs** (`/jobs?tab=find`) and **Applications** (`/jobs`): find jobs that match your profile or paste one you found, see how it fits, draft a cover letter and answers to application questions, and track where you're up to. See below.
+
+**AI**
+- **AI instructions** (`/instructions`): the standing rules the model follows for every post, and what else it's given (profile facts, past posts). Save, discard changes, or reset to the built-in default.
+- **Settings** (`/settings`): whether Ollama is running and which models you have, the image engine, what Prepare application writes, and light, dark or system theme.
+
+Old addresses (`/?post=…`, `/posts/…`, `/prompt`, `/linkedin`, `/jobs/find`) still work and lead to the new pages.
 
 ## Profile and LinkedIn data import (optional)
 
