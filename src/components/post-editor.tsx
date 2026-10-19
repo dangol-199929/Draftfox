@@ -766,8 +766,17 @@ export function StatusBadge({ post }: { post: Pick<PostRecord, "status"> }) {
     failed: "Failed",
     deleted: "Deleted",
   };
+  const variants = {
+    draft: "outline",
+    scheduled: "info",
+    publishing: "brand",
+    posted: "success",
+    failed: "destructive",
+    deleted: "muted",
+  } as const;
   return (
-    <Badge variant={post.status === "failed" ? "destructive" : post.status === "posted" ? "default" : "outline"}>
+    <Badge variant={variants[post.status]}>
+      <span aria-hidden className="size-1.5 rounded-full bg-current opacity-80" />
       {labels[post.status]}
     </Badge>
   );
