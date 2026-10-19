@@ -19,6 +19,7 @@ import {
 import { FitScore, formatAge, formatDate, formatDay, JobStatusBadge, MatchBadge, STATUS_LABELS } from "@/components/job-badges";
 import { ContactsCard, EmailCard, InterviewCard, Keywords, OfferCard, TailoredCvCard, type PartProps } from "@/components/job-parts";
 import {
+  AiDraftNote,
   CopyButton,
   DownloadButton,
   Field,
@@ -496,6 +497,7 @@ export function JobWorkspace({
               </CardHeader>
               <CardContent className="grid gap-4">
                 {isWriting("letter") && !draft.letter && <WritingPlaceholder what="your cover letter" />}
+                {job.letter && <AiDraftNote />}
                 {(draft.letter || job.letter) && (
                   <Textarea
                     aria-label="Cover letter"

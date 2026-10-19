@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BadgeDollarSign, CircleAlert, FileUser, Mail, MessagesSquare, Plus, Trash2, Users } from "lucide-react";
 import {
+  AiDraftNote,
   CopyButton,
   DownloadButton,
   Field,
@@ -99,6 +100,7 @@ export function TailoredCvCard({ job, writing, errors, onWrite, onPatch }: PartP
       <CardContent className="grid gap-4">
         {(text || job.tailoredCv) && (
           <>
+            {job.tailoredCv && <AiDraftNote what="rewrite" />}
             <Textarea
               aria-label="CV for this job"
               rows={18}
@@ -233,6 +235,7 @@ export function EmailCard({ job, writing, errors, onWrite, onPatch }: PartProps)
           <ToggleGroupItem value="follow-up">Follow-up</ToggleGroupItem>
           <ToggleGroupItem value="thank-you">Thank-you</ToggleGroupItem>
         </ToggleGroup>
+        {job.email && <AiDraftNote />}
         {(text || job.email) && (
           <Textarea
             aria-label="Email"

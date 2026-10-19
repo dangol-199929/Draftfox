@@ -38,6 +38,7 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toaster";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { PostImage, PostRecord } from "@/lib/db.ts";
 import type { LinkedInStatus } from "@/lib/linkedin.ts";
@@ -292,6 +293,7 @@ export function PostEditor({
         const { post: posted } = await request<{ post: PostRecord }>(`/api/posts/${id}/publish`, { method: "POST" });
         setPost(posted);
         setConfirmOpen(false);
+        toast("Posted to LinkedIn");
       } catch (error) {
         // The server saved the error on the post; show the post as failed too.
         setPost((current) => (current ? { ...current, status: "failed", error: (error as Error).message } : current));
@@ -305,12 +307,14 @@ export function PostEditor({
       if (!(await save())) throw new Error("Couldn't save your changes.");
       const { post: saved } = await request<{ post: PostRecord }>(`/api/posts/${id}`, json("PATCH", { scheduledAt }));
       setPost(saved);
+      toast(scheduledAt ? `Scheduled for ${formatWhen(scheduledAt)}` : "Unscheduled. It's a draft again.");
     });
 
   const remove = () =>
     act("deleting", async () => {
       lastSaved.current = draftJson; // nothing left to save
       await request(`/api/posts/${id}`, { method: "DELETE" });
+      toast("Draft deleted");
       onDeleted();
     });
 
@@ -318,11 +322,13 @@ export function PostEditor({
     act("unpublishing", async () => {
       const { post: saved } = await request<{ post: PostRecord }>(`/api/posts/${id}/publish`, { method: "DELETE" });
       setPost(saved);
+      toast("Deleted from LinkedIn. The copy here stays.");
     });
 
   const duplicate = () =>
     act("publishing", async () => {
       const { post: created } = await request<{ post: PostRecord }>("/api/posts", json("POST", { text: draft.text }));
+      toast("Copied into a new draft");
       onOpen(created.id);
     });
 

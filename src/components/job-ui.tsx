@@ -76,11 +76,25 @@ export function Gaps({ gaps }: { gaps: string[] }) {
 export function ToCheck({ items }: { items: string[] }) {
   if (items.length === 0) return null;
   return (
-    <p className="flex gap-1.5 text-xs text-amber-700 dark:text-amber-400">
-      <CircleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
+    <p className="flex gap-2 rounded-md border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-foreground">
+      <CircleAlert className="mt-px size-3.5 shrink-0 text-warning" aria-hidden />
       <span>
-        Not found in your profile, so check before sending: <strong>{items.join(", ")}</strong>
+        <span className="font-medium">Check before sending:</span> not found in your profile:{" "}
+        <strong>{items.join(", ")}</strong>
       </span>
+    </p>
+  );
+}
+
+// Marks text the local model wrote, so it's clear what still needs your review.
+export function AiDraftNote({ what = "draft" }: { what?: string }) {
+  return (
+    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <span className="inline-flex items-center gap-1 rounded-md bg-brand-soft px-1.5 py-0.5 font-medium text-brand-strong">
+        <Sparkles className="size-3" aria-hidden />
+        AI {what}
+      </span>
+      Written from your profile only. Read it and make it yours before you use it.
     </p>
   );
 }

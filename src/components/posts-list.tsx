@@ -6,6 +6,7 @@ import { ArrowDownUp, Bot, CopyPlus, Images, Loader2, PenLine, Plus, Search, Spa
 import { formatWhen, StatusBadge } from "@/components/post-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toast } from "@/components/ui/toaster";
 import type { PostRecord } from "@/lib/db.ts";
 import { cn } from "@/lib/utils";
 
@@ -95,6 +96,7 @@ export function PostsList({
       if (!response.ok) throw new Error();
       const { post } = (await response.json()) as { post: PostRecord };
       setPosts((current) => current && [post, ...current]);
+      if (from) toast("Duplicated into a new draft");
       onOpen(post.id);
     } catch {
       setError(from ? "Couldn't copy that post." : "Couldn't create a post.");

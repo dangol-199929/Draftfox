@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toaster";
 import { useSavedState } from "@/lib/use-saved-state.ts";
 
 type PromptState = {
@@ -68,6 +69,7 @@ export function PromptEditor() {
       const state = await request(method, method === "PUT" ? draft : undefined);
       setSaved(state);
       setDraft(state.prompt);
+      toast(method === "PUT" ? "Instructions saved. New posts will follow them." : "Back to the built-in instructions");
       if (method === "PUT") {
         setJustSaved(true);
         setTimeout(() => setJustSaved(false), 2000);
