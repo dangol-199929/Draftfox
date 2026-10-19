@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   Bot,
   BriefcaseBusiness,
@@ -81,10 +81,24 @@ const ALL_LINKS = GROUPS.flatMap((group) => group.links);
 // The phone tab bar keeps the four places used most; everything else is under More.
 const TAB_BAR = ["/", "/write", "/posts", "/jobs"];
 
+// Pages that switch tabs in place (Jobs) announce it with this event after updating the address.
+export const URL_CHANGED = "draftfox:url";
+
 function useActive() {
   const pathname = usePathname();
-  const query = useSearchParams();
-  return (link: NavLink) => link.match(pathname, new URLSearchParams(query.toString()));
+  // Read in the browser only: useSearchParams would need a Suspense boundary around the whole navigation.
+  const [search, setSearch] = useState("");
+  useEffect(() => {
+    const update = () => setSearch(window.location.search);
+    update();
+    window.addEventListener("popstate", update);
+    window.addEventListener(URL_CHANGED, update);
+    return () => {
+      window.removeEventListener("popstate", update);
+      window.removeEventListener(URL_CHANGED, update);
+    };
+  }, [pathname]);
+  return (link: NavLink) => link.match(pathname, new URLSearchParams(search));
 }
 
 export function Logo({ className }: { className?: string }) {

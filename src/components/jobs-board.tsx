@@ -9,6 +9,7 @@ import { JobFinder } from "@/components/job-finder";
 import { JobListCard, selectInUrl, SplitLayout, useWide } from "@/components/job-split";
 import { JobWorkspace } from "@/components/job-workspace";
 import { OpenToWork } from "@/components/open-to-work";
+import { URL_CHANGED } from "@/components/site-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -206,11 +207,17 @@ export function JobsBoard({ initialTab = "mine", initialJob = null }: { initialT
 
   const shown = (jobs ?? []).filter((job) => filter === "all" || job.status === filter);
 
+  // Lets the sidebar highlight Find jobs or Applications after the address changed.
+  useEffect(() => {
+    window.dispatchEvent(new Event(URL_CHANGED));
+  }, []);
+
   // The tab is kept in the address (?tab=find), so reloading or going back shows the same one.
   function showTab(next: JobsTab) {
     setTab(next);
     setSelected(null);
     window.history.replaceState(null, "", next === "find" ? "/jobs?tab=find" : "/jobs");
+    window.dispatchEvent(new Event(URL_CHANGED));
   }
 
   return (

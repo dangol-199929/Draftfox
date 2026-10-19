@@ -183,7 +183,6 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: "ss01", "cv11";
   }
   ::selection {
     background: color-mix(in oklch, var(--brand) 28%, transparent);

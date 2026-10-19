@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SiteHeader } from "@/components/site-header";
@@ -26,10 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           >
             Skip to content
           </a>
-          {/* The navigation reads the query string (Find jobs vs Applications), which needs a Suspense boundary. */}
-          <Suspense>
-            <SiteHeader />
-          </Suspense>
+          <SiteHeader />
           <div className="lg:pl-60">
             <main id="main" className="mx-auto max-w-6xl px-4 pt-6 pb-28 sm:px-6 lg:px-10 lg:pt-10 lg:pb-16">
               {children}
