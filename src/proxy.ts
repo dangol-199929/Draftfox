@@ -13,10 +13,11 @@ export function proxy(request: NextRequest) {
   if (pathname.startsWith("/api/")) {
     return Response.json({ error: "Sign in to Draftfox first." }, { status: 401 });
   }
-  // A relative redirect (see redirectTo in lib/api.ts): request.url has the server's 0.0.0.0 address.
-  const login = new URL("/login", "http://draftfox");
+  // Built from the Host header, not request.url, which has the server's 0.0.0.0 address. (The proxy can't send a
+  // relative Location the way redirectTo in lib/api.ts does.)
+  const login = new URL("/login", `${request.nextUrl.protocol}//${request.headers.get("host") ?? request.nextUrl.host}`);
   if (pathname !== "/") login.searchParams.set("next", `${pathname}${search}`);
-  return new NextResponse(null, { status: 307, headers: { Location: `${login.pathname}${login.search}` } });
+  return NextResponse.redirect(login);
 }
 
 export const config = {
