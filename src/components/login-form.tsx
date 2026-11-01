@@ -9,13 +9,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 // Full-screen sign-in, drawn over the app's layout (the sidebar hides itself on this page).
-export function LoginForm({ next }: { next: string }) {
-  const [password, setPassword] = useState("");
+// It's a real form posting to /api/auth/login, so it works even if the page's script doesn't load; with the script,
+// it signs in without leaving the page. The button is never disabled for an empty field: a password filled in by
+// the browser doesn't always tell the page, and the form reads the field itself when it's sent.
+export function LoginForm({ next, initialError }: { next: string; initialError: string }) {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialError);
 
-  async function submit(event: React.FormEvent) {
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const password = new FormData(event.currentTarget).get("password");
+    if (typeof password !== "string" || !password) {
+      setError("Enter your password.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -51,17 +58,17 @@ export function LoginForm({ next }: { next: string }) {
             <CardDescription>Enter your Draftfox password to open your workspace.</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={submit} className="grid gap-4">
+            <form action="/api/auth/login" method="post" onSubmit={submit} className="grid gap-4">
+              <input type="hidden" name="next" value={next} />
               <div className="grid gap-2">
                 <Label htmlFor="password">Password</Label>
                 <Input
                   id="password"
+                  name="password"
                   type="password"
                   autoComplete="current-password"
                   autoFocus
                   required
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
                   aria-invalid={error ? true : undefined}
                 />
               </div>
@@ -70,7 +77,7 @@ export function LoginForm({ next }: { next: string }) {
                   {error}
                 </p>
               )}
-              <Button type="submit" disabled={busy || !password}>
+              <Button type="submit" disabled={busy}>
                 {busy && <Loader2 className="animate-spin" />}
                 Sign in
               </Button>
