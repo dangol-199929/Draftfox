@@ -177,50 +177,49 @@ export type JsonOptions = {
   keepAlive?: string | number;
   temperature?: number;
   signal?: AbortSignal;
+  // The caller already holds the GPU lease (the video worker takes it through /api/worker/gpu first).
+  skipGpuLease?: boolean;
 };
 
 // Asks for a reply that matches a JSON schema (Ollama's structured outputs) and returns it parsed.
 export async function generateJson<T>(prompt: string, system: string, schema: object, options: JsonOptions = {}): Promise<T> {
   const model = options.model ?? OLLAMA_MODEL;
-  return withGpu(
-    `Ollama: ${model}`,
-    async () => {
-      let response: Response;
-      try {
-        response = await fetch(`${OLLAMA_URL}/api/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model,
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: prompt },
-            ],
-            format: schema,
-            stream: false,
-            think: false,
-            options: options.temperature === undefined ? OPTIONS : { ...OPTIONS, temperature: options.temperature },
-            ...(options.keepAlive !== undefined && { keep_alive: options.keepAlive }),
-          }),
-          signal: requestSignal(options.signal),
-        });
-      } catch (error) {
-        throw unreachable(error);
-      }
-      if (response.status === 404) throw new Error(`Model "${model}" is not downloaded. Run: ollama pull ${model}`);
-      if (!response.ok) throw new Error(`Ollama returned ${response.status}: ${await response.text()}`);
-      let data: ChatResponse;
-      try {
-        data = (await response.json()) as ChatResponse;
-      } catch (error) {
-        throw unreachable(error);
-      }
-      try {
-        return JSON.parse(data.message.content) as T;
-      } catch {
-        throw new Error("The model's reply wasn't valid JSON. Try again.");
-      }
-    },
-    { signal: options.signal },
-  );
+  const run = async (): Promise<T> => {
+    let response: Response;
+    try {
+      response = await fetch(`${OLLAMA_URL}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: prompt },
+          ],
+          format: schema,
+          stream: false,
+          think: false,
+          options: options.temperature === undefined ? OPTIONS : { ...OPTIONS, temperature: options.temperature },
+          ...(options.keepAlive !== undefined && { keep_alive: options.keepAlive }),
+        }),
+        signal: requestSignal(options.signal),
+      });
+    } catch (error) {
+      throw unreachable(error);
+    }
+    if (response.status === 404) throw new Error(`Model "${model}" is not downloaded. Run: ollama pull ${model}`);
+    if (!response.ok) throw new Error(`Ollama returned ${response.status}: ${await response.text()}`);
+    let data: ChatResponse;
+    try {
+      data = (await response.json()) as ChatResponse;
+    } catch (error) {
+      throw unreachable(error);
+    }
+    try {
+      return JSON.parse(data.message.content) as T;
+    } catch {
+      throw new Error("The model's reply wasn't valid JSON. Try again.");
+    }
+  };
+  return options.skipGpuLease ? run() : withGpu(`Ollama: ${model}`, run, { signal: options.signal });
 }
