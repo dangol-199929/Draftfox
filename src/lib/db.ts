@@ -3,7 +3,8 @@
 // and every generated post, so a post finished while you were on another page isn't lost.
 // Also an activity log (posts published, drafts copied, LinkedIn connected...) that the Reports page reads,
 // the posts you edit, schedule or publish from the Posts page, their images (files in data/images), settings,
-// and the jobs you track on the Jobs page.
+// and the jobs you track on the Jobs page. The Video Studio's tables (video_jobs, video_job_events) are read and
+// written in video-jobs.ts.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -92,6 +93,38 @@ const SCHEMA = `
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS video_jobs (
+    id TEXT PRIMARY KEY,
+    topic TEXT NOT NULL,
+    series_id TEXT,
+    status TEXT NOT NULL,
+    stage TEXT,
+    progress REAL NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    script TEXT,
+    scenes TEXT,
+    assets TEXT,
+    output_path TEXT,
+    qc TEXT,
+    completed_stages TEXT NOT NULL DEFAULT '[]',
+    redo TEXT,
+    worker_id TEXT,
+    lease_until TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS video_jobs_status ON video_jobs (status, created_at);
+  CREATE TABLE IF NOT EXISTS video_job_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    stage TEXT,
+    level TEXT NOT NULL,
+    message TEXT NOT NULL,
+    data TEXT,
+    at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS video_job_events_job ON video_job_events (job_id, id);
 `;
 
 // One connection per server process; kept on globalThis so dev hot reloads don't open a new one each time.
@@ -118,7 +151,8 @@ function addColumns(database: DatabaseSync): void {
   }
 }
 
-function db(): DatabaseSync {
+// Exported for the modules that keep their own tables here (video-jobs.ts).
+export function db(): DatabaseSync {
   if (!globalForDb.appDb) {
     mkdirSync(DATA_DIR, { recursive: true });
     globalForDb.appDb = new DatabaseSync(DB_FILE);
