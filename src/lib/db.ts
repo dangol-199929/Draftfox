@@ -243,6 +243,8 @@ export const EVENT_TYPES = [
   "autopilot_ran",
   "linkedin_connected",
   "linkedin_disconnected",
+  "youtube_connected",
+  "youtube_disconnected",
   "profile_saved",
   "profile_imported",
   "prompt_saved",

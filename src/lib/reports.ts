@@ -217,6 +217,10 @@ function eventText(event: EventRow): string {
       return event.data.posting ? "Enabled posting to LinkedIn" : "Connected LinkedIn";
     case "linkedin_disconnected":
       return "Disconnected LinkedIn";
+    case "youtube_connected":
+      return "Connected YouTube";
+    case "youtube_disconnected":
+      return "Disconnected YouTube";
     case "profile_saved":
       return "Saved the profile";
     case "profile_imported":

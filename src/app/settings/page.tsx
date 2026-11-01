@@ -6,6 +6,7 @@ import { ImageSetup } from "@/components/image-setup";
 import { JobSettingsCard } from "@/components/job-settings";
 import { OllamaSettings } from "@/components/ollama-settings";
 import { PageHeader } from "@/components/page-header";
+import { YouTubeSettings } from "@/components/youtube-settings";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -13,6 +14,7 @@ const SECTIONS = [
   { id: "local-ai", label: "Local AI" },
   { id: "images", label: "Images" },
   { id: "jobs", label: "Jobs" },
+  { id: "youtube", label: "YouTube" },
   { id: "appearance", label: "Appearance" },
 ];
 
@@ -57,6 +59,9 @@ export default function SettingsPage() {
           </Section>
           <Section id="jobs" title="Jobs">
             <JobSettingsCard />
+          </Section>
+          <Section id="youtube" title="YouTube">
+            <YouTubeSettings />
           </Section>
           <Section id="appearance" title="Appearance">
             <AppearanceSettings />
