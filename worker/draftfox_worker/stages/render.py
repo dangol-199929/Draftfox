@@ -1,6 +1,8 @@
-"""Render stage: the scene images, narration, captions and (optional) music become a 1080x1920, 30 fps H.264/AAC MP4
-of about VIDEO_TARGET_SECONDS (see length.py). Each scene slowly zooms or pans, scenes crossfade, and the picture
-gets a PS2-era finish: rendered at low resolution, colours reduced a little, then scaled back up with hard pixel edges."""
+"""Render stage: the scene clips (or images), narration, captions and (optional) music become a 1080x1920, 30 fps
+H.264/AAC MP4 of about VIDEO_TARGET_SECONDS (see length.py). A scene with an LTX clip plays it, slowed a little or
+holding its last frame when the scene runs longer; a scene without one slowly zooms or pans its image. Scenes
+crossfade, and the picture gets a PS2-era finish: rendered at low resolution, colours reduced a little, then scaled
+back up with hard pixel edges."""
 
 from __future__ import annotations
 
@@ -19,6 +21,8 @@ NARRATION_DELAY = 0.3
 # The retro look: the low resolution it's drawn at, and how many levels each colour channel keeps.
 RETRO_WIDTH, RETRO_HEIGHT = 360, 640
 COLOUR_STEP = 8  # 256 / 8 = 32 levels per channel
+# A clip shorter than its scene plays at most this much slower; after that its last frame is held.
+MAX_STRETCH = 1.3
 MUSIC_TYPES = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
 
 
@@ -62,16 +66,35 @@ def run(ctx: StageContext) -> dict[str, Any]:
     mood = (ctx.job.get("script") or {}).get("mood", "calm")
     music = pick_music(ctx, mood)
 
+    # The visuals stage's LTX clips, where it made them (none when motion was off for this video).
+    assets = ctx.job.get("assets") or {}
+    stills = set(assets.get("motion_stills") or [])
+    clips: list[Path | None] = [None] * count
+    if assets.get("motion_model") == "ltx":
+        for i in range(count):
+            name = files.get(f"clip-{i + 1}")
+            if name and i + 1 not in stills and (ctx.dir / name).is_file():
+                clips[i] = ctx.dir / name
+
     inputs: list[str] = []
-    for image in images:
+    for i, image in enumerate(images):
         # One frame per image: zoompan turns it into `frames` frames.
-        inputs += ["-i", image.name]
+        inputs += ["-i", clips[i].name if clips[i] else image.name]
     inputs += ["-i", narration.name]
     if music:
         inputs += ["-stream_loop", "-1", "-i", str(music)]
 
     parts = []
     for i in range(count):
+        if clips[i]:
+            stretch = min(max(clip / duration(ctx.config, clips[i]), 1), MAX_STRETCH)
+            parts.append(
+                f"[{i}:v]setpts={stretch:.4f}*(PTS-STARTPTS),fps={FPS},"
+                f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop={WIDTH}:{HEIGHT},"
+                f"tpad=stop_mode=clone:stop_duration={clip:.3f},trim=duration={clip:.3f},setpts=PTS-STARTPTS,"
+                f"setsar=1,format=yuv420p[v{i}]"
+            )
+            continue
         # Upscale first so the slow zoom moves smoothly instead of in whole-pixel jumps.
         parts.append(
             f"[{i}:v]scale={WIDTH * 2}:{HEIGHT * 2}:force_original_aspect_ratio=increase,crop={WIDTH * 2}:{HEIGHT * 2},"
@@ -99,7 +122,11 @@ def run(ctx: StageContext) -> dict[str, Any]:
         parts.append(f"{voice}[audio]")
 
     out = ctx.dir / "video.mp4"
-    ctx.progress(0.1, f"Rendering {total:.1f} s from {count} scenes{' with music' if music else ''}")
+    moving = sum(1 for c in clips if c)
+    ctx.progress(
+        0.1,
+        f"Rendering {total:.1f} s from {count} scenes ({moving} animated){' with music' if music else ''}",
+    )
     run_ffmpeg(
         ctx.config,
         [
@@ -139,5 +166,5 @@ def run(ctx: StageContext) -> dict[str, Any]:
     ctx.progress(1, "Rendered")
     return {
         "outputPath": str(out),
-        "assets": {"video_seconds": round(total, 2), "music": music.name if music else None},
+        "assets": {"video_seconds": round(total, 2), "music": music.name if music else None, "animated_scenes": moving},
     }

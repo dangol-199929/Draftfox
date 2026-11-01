@@ -32,8 +32,13 @@ const SCHEMA = {
       maxItems: SCENES.max,
       items: {
         type: "object",
-        properties: { narration: { type: "string" }, image_prompt: { type: "string" }, on_screen_text: { type: "string" } },
-        required: ["narration", "image_prompt", "on_screen_text"],
+        properties: {
+          narration: { type: "string" },
+          image_prompt: { type: "string" },
+          motion_prompt: { type: "string" },
+          on_screen_text: { type: "string" },
+        },
+        required: ["narration", "image_prompt", "motion_prompt", "on_screen_text"],
       },
     },
     post_caption: { type: "string" },
@@ -58,7 +63,8 @@ function systemPrompt(sceneWords: SceneWords, minWords: number, maxWords: number
 Rules:
 - scenes: ${SCENES.min} to ${SCENES.max}, in order. Read one after another, their narrations are the whole voice-over (${minWords} to ${maxWords} words in total).
   - narration: what the voice says during this scene: one or two full sentences, ${sceneWords.min} to ${sceneWords.max} words (aim for ${sceneWords.target}). Plain spoken English. The first scene is the hook. Each scene adds something new; don't repeat a point. No emojis, hashtags or stage directions.
-  - image_prompt: one picture for an image generator showing what the narration says, under 60 words: subject, setting, composition, lighting. Vertical framing. No text, letters, logos or real people's names in the picture.
+  - image_prompt: one picture for an image generator showing what the narration says, under 60 words: subject, setting, composition, lighting. Vertical framing. No text, letters, logos or real people's names in the picture, and nothing that would have writing on it: no screens, phones, signs, books, papers or posters.
+  - motion_prompt: how the picture moves for a few seconds, under 30 words: one gentle camera move (slow push-in, slow pan, slow pull-back) and one small natural movement of the subject or setting (hair or cloth in a breeze, rippling water, drifting clouds, flickering firelight, a slow turn of the head). Calm and subtle; no fast action or new objects appearing.
   - on_screen_text: a short caption shown over the scene, 2 to 6 words.
 - title: under 60 characters.
 - post_caption: one or two sentences to post with the video.
@@ -129,6 +135,7 @@ function tidy(script: Draft, topic: string): VideoScript {
   const scenes = (script.scenes ?? []).map((scene) => ({
     narration: sentence((scene.narration ?? "").replace(/\s+/g, " ").trim()),
     image_prompt: (scene.image_prompt ?? "").trim(),
+    motion_prompt: (scene.motion_prompt ?? "").replace(/\s+/g, " ").trim(),
     on_screen_text: (scene.on_screen_text ?? "").trim(),
   }));
   return {

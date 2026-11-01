@@ -44,6 +44,11 @@ class StageContext:
         self.check()
         self.client.progress(self.job_id, value, message)
 
+    def warn(self, value: float, message: str) -> None:
+        """Like progress, but the message is logged as a warning in the job's events."""
+        self.check()
+        self.client.progress(self.job_id, value, message, level="warn")
+
     def save_asset(self, name: str, path: Path) -> None:
         """Records a finished file so a restart reuses it instead of making it again."""
         self.client.register_asset(self.job_id, name, str(path))

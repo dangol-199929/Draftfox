@@ -1,4 +1,5 @@
-"""A small ComfyUI client: start it if needed, queue an API-format workflow, wait, download the image."""
+"""A small ComfyUI client: start it if needed, upload an input image, queue an API-format workflow, wait, download
+the result."""
 
 from __future__ import annotations
 
@@ -69,8 +70,26 @@ class Comfy:
                 return
         raise StageError(f"ComfyUI didn't start within {int(wait_seconds)} seconds.")
 
+    def upload_image(self, path: Path, name: str) -> str:
+        """Puts an image in ComfyUI's input folder (overwriting one of the same name) for a LoadImage node."""
+        boundary = uuid.uuid4().hex
+        body = (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="overwrite"\r\n\r\ntrue\r\n'
+            f'--{boundary}\r\nContent-Disposition: form-data; name="image"; filename="{name}"\r\n'
+            "Content-Type: image/png\r\n\r\n"
+        ).encode() + path.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
+        request = urllib.request.Request(
+            f"{self.url}/upload/image", data=body, method="POST", headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                answer = json.loads(response.read().decode() or "{}")
+        except urllib.error.HTTPError as error:
+            raise StageError(f"ComfyUI refused the image upload ({error.code}).") from None
+        return answer.get("name", name)
+
     def run(self, workflow: dict[str, Any], out_path: Path, check: Callable[[], None], timeout: float = 600) -> Path:
-        """Queues the workflow, waits for its first image and saves it to out_path."""
+        """Queues the workflow, waits for its first output file (an image, or a clip from SaveWEBM) and saves it to out_path."""
         queued = self._post("/prompt", {"prompt": workflow, "client_id": str(uuid.uuid4())})
         prompt_id = queued.get("prompt_id")
         if not prompt_id:
@@ -80,7 +99,7 @@ class Comfy:
             check()
             if time.monotonic() > deadline:
                 self._post("/interrupt", {})
-                raise StageError(f"ComfyUI took longer than {int(timeout)} s for one image.")
+                raise StageError(f"ComfyUI took longer than {int(timeout)} s.")
             history = json.loads(self._get(f"/history/{prompt_id}"))
             entry = history.get(prompt_id) or {}
             status = entry.get("status") or {}

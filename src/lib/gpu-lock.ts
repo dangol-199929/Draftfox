@@ -41,10 +41,26 @@ export function interactiveWaiting(): number {
   return state.gpuInteractiveWaiting ?? 0;
 }
 
-// Takes the lease if it's free (or already this holder's). Background holders don't get it while an app request waits.
-// node:sqlite is synchronous, so the read and write can't interleave with another request in this server.
+// No background GPU work (the video worker) from 20:40 to 21:20 Sydney time. The lease isn't handed out from a few
+// minutes before, so a scene that's just started can't run into it.
+const QUIET_START = 20 * 60 + 40;
+const QUIET_END = 21 * 60 + 20;
+const QUIET_LEAD_MINUTES = 3;
+export const GPU_QUIET_HOURS = "20:40-21:20 Sydney time";
+const sydneyClock = new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Sydney", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+export function inGpuQuietHours(now = Date.now()): boolean {
+  const parts = Object.fromEntries(sydneyClock.formatToParts(now).map((part) => [part.type, part.value]));
+  const minute = Number(parts.hour) * 60 + Number(parts.minute);
+  return minute >= QUIET_START - QUIET_LEAD_MINUTES && minute < QUIET_END;
+}
+
+// Takes the lease if it's free (or already this holder's). Background holders don't get it while an app request
+// waits, or in the quiet hours. node:sqlite is synchronous, so the read and write can't interleave with another
+// request in this server.
 export function tryAcquireGpu(holder: string, purpose: string, ttlMs: number, priority: GpuPriority): boolean {
   const now = Date.now();
+  if (priority === "background" && inGpuQuietHours(now)) return false;
   const row = db().prepare("SELECT * FROM gpu_lease WHERE id = 1").get() as LeaseRow | undefined;
   if (row && !isStale(row, now) && row.holder !== holder) return false;
   if (priority === "background" && interactiveWaiting() > 0 && row?.holder !== holder) return false;

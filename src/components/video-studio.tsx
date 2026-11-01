@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -154,12 +155,13 @@ export function VideoStudio() {
 function AddTopics({ onAdded }: { onAdded: (jobs: VideoJob[]) => void }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [motion, setMotion] = useState(true);
   const topics = text.split("\n").map((line) => line.trim()).filter(Boolean);
 
   async function add() {
     setBusy(true);
     try {
-      const { jobs } = await api<{ jobs: VideoJob[] }>("/api/video/jobs", { method: "POST", body: JSON.stringify({ topics }) });
+      const { jobs } = await api<{ jobs: VideoJob[] }>("/api/video/jobs", { method: "POST", body: JSON.stringify({ topics, motion }) });
       toast(jobs.length === 1 ? "Added to the queue" : `Added ${jobs.length} videos to the queue`);
       setText("");
       onAdded(jobs);
@@ -194,6 +196,12 @@ function AddTopics({ onAdded }: { onAdded: (jobs: VideoJob[]) => void }) {
           <p className="text-xs text-muted-foreground">
             {topics.length ? `${topics.length} topic${topics.length === 1 ? "" : "s"}` : "Up to 20 at a time"}
           </p>
+          <div className="ml-auto flex items-center gap-2" title="Animate each scene with LTX-Video; off keeps still images with a slow zoom">
+            <Switch id="video-motion" checked={motion} onCheckedChange={setMotion} />
+            <Label htmlFor="video-motion" className="text-xs font-normal">
+              Motion
+            </Label>
+          </div>
           <Button size="sm" disabled={busy || !topics.length} onClick={add}>
             {busy ? <Loader2 className="animate-spin" /> : <ListPlus />}
             Add to queue

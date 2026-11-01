@@ -1,5 +1,13 @@
 import { badRequest } from "@/lib/api.ts";
-import { currentGpuLease, freeComfyUi, releaseGpu, tryAcquireGpu, unloadOllamaModels } from "@/lib/gpu-lock.ts";
+import {
+  GPU_QUIET_HOURS,
+  currentGpuLease,
+  freeComfyUi,
+  inGpuQuietHours,
+  releaseGpu,
+  tryAcquireGpu,
+  unloadOllamaModels,
+} from "@/lib/gpu-lock.ts";
 import { readWorkerBody, workerAuthError } from "@/lib/worker-auth.ts";
 
 export const runtime = "nodejs";
@@ -9,7 +17,8 @@ const POLL_MS = 500;
 
 // The worker's side of the GPU lease (see gpu-lock.ts). Body: { workerId, action, purpose?, uses?, waitSeconds?, ttlSeconds? }
 // - acquire: waits up to waitSeconds (at most 25) for the lease; { granted: false } means ask again. App requests
-//   go first. With uses: "comfyui", Ollama's models are unloaded once it's granted, to make room.
+//   go first, and it isn't granted in the quiet hours (see gpu-lock.ts). With uses: "comfyui", Ollama's models are
+//   unloaded once it's granted, to make room.
 // - renew: extends the lease during long work. - release: gives it back; with uses: "comfyui", ComfyUI frees its memory.
 export async function POST(request: Request) {
   const denied = workerAuthError(request);
@@ -26,7 +35,8 @@ export async function POST(request: Request) {
     const deadline = Date.now() + Math.min(Math.max(Number(body.waitSeconds) || 0, 0) * 1000, MAX_WAIT_MS);
     while (!tryAcquireGpu(holder, purpose, ttlMs, "background")) {
       if (Date.now() >= deadline || request.signal.aborted) {
-        return Response.json({ granted: false, lease: currentGpuLease() });
+        const quiet = inGpuQuietHours() ? { purpose: `quiet hours, ${GPU_QUIET_HOURS}` } : null;
+        return Response.json({ granted: false, lease: currentGpuLease() ?? quiet });
       }
       await new Promise((resolve) => setTimeout(resolve, POLL_MS));
     }

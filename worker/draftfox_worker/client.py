@@ -55,8 +55,8 @@ class DraftfoxClient:
     def heartbeat(self, **status: Any) -> dict[str, Any]:
         return self.post("/api/worker/heartbeat", status, timeout=10)
 
-    def progress(self, job_id: str, progress: float, message: str | None = None) -> None:
-        self.post(f"/api/worker/jobs/{job_id}/progress", {"progress": progress, "message": message})
+    def progress(self, job_id: str, progress: float, message: str | None = None, level: str = "info") -> None:
+        self.post(f"/api/worker/jobs/{job_id}/progress", {"progress": progress, "message": message, "level": level})
 
     def register_asset(self, job_id: str, name: str, path: str) -> None:
         self.post(f"/api/worker/jobs/{job_id}/assets", {"name": name, "path": path})

@@ -46,7 +46,14 @@ export function isVideoStage(value: unknown): value is VideoStage {
 }
 
 // narration: what the voice says during this scene (the script's narration is these joined); older scripts don't have it.
-export type VideoScene = { narration?: string; image_prompt: string; on_screen_text: string; image?: string | null };
+// motion_prompt: how the scene's LTX clip moves (the worker uses a gentle default when it's missing).
+export type VideoScene = {
+  narration?: string;
+  image_prompt: string;
+  motion_prompt?: string;
+  on_screen_text: string;
+  image?: string | null;
+};
 
 export type VideoScript = {
   title: string;
@@ -171,15 +178,16 @@ export function listVideoJobs(): VideoJob[] {
   return (db().prepare("SELECT * FROM video_jobs ORDER BY created_at DESC").all() as VideoJobRow[]).map(toJob);
 }
 
-export function createVideoJob(topic: string, seriesId: string | null = null): VideoJob {
+// motion: false keeps this video's scenes as still images even when the worker has VIDEO_MOTION=ltx.
+export function createVideoJob(topic: string, seriesId: string | null = null, motion = true): VideoJob {
   const now = new Date().toISOString();
   const id = randomUUID();
   db()
     .prepare(
-      `INSERT INTO video_jobs (id, topic, series_id, status, stage, created_at, updated_at)
-       VALUES (?, ?, ?, 'WAITING', 'script', ?, ?)`,
+      `INSERT INTO video_jobs (id, topic, series_id, status, stage, assets, created_at, updated_at)
+       VALUES (?, ?, ?, 'WAITING', 'script', ?, ?, ?)`,
     )
-    .run(id, topic, seriesId, now, now);
+    .run(id, topic, seriesId, motion ? null : JSON.stringify({ motion: false }), now, now);
   logVideoEvent(id, null, "info", "Added to the queue");
   return getVideoJob(id)!;
 }
@@ -288,12 +296,12 @@ export function renewLease(id: string, workerId: string): boolean {
   return Number(result.changes) > 0;
 }
 
-export function reportProgress(id: string, workerId: string, progress: number, message?: string) {
+export function reportProgress(id: string, workerId: string, progress: number, message?: string, level: "info" | "warn" = "info") {
   db()
     .prepare("UPDATE video_jobs SET progress = ?, lease_until = ?, updated_at = ? WHERE id = ? AND worker_id = ?")
     .run(Math.max(0, Math.min(1, progress)), leaseUntil(), new Date().toISOString(), id, workerId);
   const job = getVideoJob(id);
-  if (message && job) logVideoEvent(id, job.stage, "info", message);
+  if (message && job) logVideoEvent(id, job.stage, level, message);
 }
 
 export type StageResult = {
@@ -389,14 +397,16 @@ export function redoVideoStages(id: string, stages: VideoStage[], redo: VideoRed
   if (!job) return;
   const again = new Set(stages.flatMap((stage) => DEPENDENTS[stage]));
   const completed = job.completedStages.filter((stage) => !again.has(stage));
-  // The visuals stage keeps scene images it finds (so an interrupted run resumes); when all of them are to be
-  // drawn again (a new script, or a full redo), forget them first.
+  // The visuals stage keeps scene images and clips it finds (so an interrupted run resumes); when all of them are to
+  // be made again (a new script, or a full redo), forget them first.
   let assets = job.assets;
   if (again.has("visuals") && !redo?.scenes?.length) {
     const files = Object.fromEntries(
-      Object.entries((job.assets.files as Record<string, string> | undefined) ?? {}).filter(([name]) => !name.startsWith("scene-")),
+      Object.entries((job.assets.files as Record<string, string> | undefined) ?? {}).filter(
+        ([name]) => !name.startsWith("scene-") && !name.startsWith("clip-"),
+      ),
     );
-    assets = { ...job.assets, files, image_seconds: {} };
+    assets = { ...job.assets, files, image_seconds: {}, clip_seconds: {}, motion_stills: [] };
   }
   db()
     .prepare(

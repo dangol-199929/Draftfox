@@ -4,7 +4,7 @@ import { readWorkerBody, workerAuthError } from "@/lib/worker-auth.ts";
 
 export const runtime = "nodejs";
 
-// { workerId, progress: 0..1, message? } for the stage the job is in.
+// { workerId, progress: 0..1, message?, level?: "info" | "warn" } for the stage the job is in.
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const denied = workerAuthError(request);
   if (denied) return denied;
@@ -16,6 +16,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const progress = typeof input.body.progress === "number" ? input.body.progress : held.job.progress;
   const message = typeof input.body.message === "string" ? input.body.message.slice(0, 500) : undefined;
-  reportProgress(id, input.workerId, progress, message);
+  reportProgress(id, input.workerId, progress, message, input.body.level === "warn" ? "warn" : "info");
   return Response.json({ ok: true });
 }
