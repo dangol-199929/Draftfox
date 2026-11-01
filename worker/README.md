@@ -40,7 +40,8 @@ images, auto-posting) go first, and the worker gives the card back between stage
 | `VIDEO_IMAGE_MODEL` | `flux2-klein` | `flux2-klein` (about 10 s an image on an RTX 5050) or `sdxl` (SDXL base 1.0, about 20 s) |
 | `VIDEO_FLUX_UNET` | `flux-2-klein-4b-fp8.safetensors` | FLUX.2 Klein model file |
 | `VIDEO_SDXL_CHECKPOINT` | `sd_xl_base_1.0.safetensors` | SDXL checkpoint file |
-| `VIDEO_VOICE` | `af_heart` | Kokoro voice (American English voices start with `a`) |
+| `VIDEO_VOICE` | `bm_george` | Kokoro voice (British English voices start with `b`, American with `a`); samples in DraftfoxHub/voice-samples |
+| `VIDEO_VOICE_SPEED` | `0.9` | Speaking speed; the audio stage speeds up by 0.1 or 0.2 if the narration runs long. If you change it, Draftfox writes the scripts to match (src/lib/video-length.ts) |
 | `VIDEO_WHISPER_MODEL` | `base.en` | faster-whisper model for caption timings (`small.en` is slower, a little more exact) |
 | `FFMPEG`, `FFPROBE` | on PATH | Full paths if they aren't on PATH |
 | `WORKER_DUMMY` | | `1` runs placeholder stages only, for testing |

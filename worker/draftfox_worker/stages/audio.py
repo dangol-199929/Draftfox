@@ -17,7 +17,8 @@ from .script import write_script
 log = logging.getLogger("worker.audio")
 
 SAMPLE_RATE = 24000
-SPEEDS = (1.0, 1.1, 1.2)
+# Tried in order, as steps up from the voice's own speed (VIDEO_VOICE_SPEED), until the narration fits.
+SPEED_STEPS = (0.0, 0.1, 0.2)
 REWRITES = 2
 
 _pipelines: dict[str, Any] = {}
@@ -127,17 +128,19 @@ def run(ctx: StageContext) -> dict[str, Any]:
     narration = script.get("narration", "").strip()
     if not narration:
         raise StageError("The script has no narration.", retryable=False)
-    voice = ctx.config.get("VIDEO_VOICE", "af_heart")
+    voice = ctx.config.get("VIDEO_VOICE", "bm_george")
+    base_speed = float(ctx.config.get("VIDEO_VOICE_SPEED", "0.9"))
+    speeds = [round(base_speed + step, 2) for step in SPEED_STEPS]
     whisper_model = ctx.config.get("VIDEO_WHISPER_MODEL", "base.en")
     wav = ctx.dir / "narration.wav"
     length = video_length(ctx.config)
 
     started = time.monotonic()
     seconds = 0.0
-    speed = SPEEDS[0]
+    speed = speeds[0]
     rewrites = 0
     while True:
-        for speed in SPEEDS:
+        for speed in speeds:
             ctx.progress(0.1, f"Speaking the narration with {voice} at {speed:.1f}x")
             seconds = speak(narration, voice, speed, wav)
             if seconds <= length.max_spoken:

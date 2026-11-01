@@ -45,7 +45,8 @@ export function isVideoStage(value: unknown): value is VideoStage {
   return typeof value === "string" && (VIDEO_STAGES as readonly string[]).includes(value);
 }
 
-export type VideoScene = { image_prompt: string; on_screen_text: string; image?: string | null };
+// narration: what the voice says during this scene (the script's narration is these joined); older scripts don't have it.
+export type VideoScene = { narration?: string; image_prompt: string; on_screen_text: string; image?: string | null };
 
 export type VideoScript = {
   title: string;

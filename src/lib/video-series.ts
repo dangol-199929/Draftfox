@@ -11,7 +11,8 @@ export const VIDEO_SERIES: VideoSeries[] = [
     noQuotes: true,
     scriptRules: `This video is part of the series "Marcus Aurelius: Notes to Self": modern interpretations of the Meditations.
 - Never quote Marcus Aurelius directly and never put words in quotation marks as if he said them. Paraphrase: "Marcus Aurelius taught...", "Marcus believed...", "In his private notes, he reminded himself...".
-- Don't invent facts about his life. Keep the lesson practical for someone today.`,
+- Don't invent facts about his life. Keep the lesson practical for someone today.
+- Develop the lesson across the scenes in this order: a hook (the first scene or two: the lesson as a sharp idea), a concrete everyday example (a few scenes: one ordinary moment, like a message left unanswered or a bad morning at work), how to apply it (a few scenes: what to actually do), and a closing line (the last scene: short and memorable).`,
   },
 ];
 

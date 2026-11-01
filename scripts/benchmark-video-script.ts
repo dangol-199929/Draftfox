@@ -126,7 +126,7 @@ const lines = [
   "# Video script models",
   "",
   `Run ${new Date().toISOString()} on this PC. ${TOPICS.length} fixed topics per model; a script counts as valid when it passes`,
-  `every check (narration ${NARRATION_WORDS.min}-${NARRATION_WORDS.max} words, 2-3 scenes, captions, hashtags, mood) within 3 tries.`,
+  `every check (narration ${NARRATION_WORDS.min}-${NARRATION_WORDS.max} words, scene count, captions, hashtags, mood) within 3 tries.`,
   "Seconds are per finished script, including retries, with the model already loaded. VRAM and RAM are what Ollama",
   "reports for the loaded model (RAM is the part that didn't fit on the graphics card); peak is the rise in nvidia-smi's",
   "used memory during the run.",

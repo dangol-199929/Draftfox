@@ -1,4 +1,4 @@
-"""How long the videos are, from VIDEO_TARGET_SECONDS (default 25), the same setting Draftfox uses to write the
+"""How long the videos are, from VIDEO_TARGET_SECONDS (default 50), the same setting Draftfox uses to write the
 scripts (src/lib/video-length.ts; keep the two in step)."""
 
 from __future__ import annotations
@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from .config import Config
 
-DEFAULT_SECONDS = 25.0
+DEFAULT_SECONDS = 50.0
 
 
 @dataclass(frozen=True)
@@ -30,14 +30,14 @@ def video_length(config: Config) -> VideoLength:
         seconds = float(config.get("VIDEO_TARGET_SECONDS", str(DEFAULT_SECONDS)))
     except ValueError:
         seconds = DEFAULT_SECONDS
-    if not 8 <= seconds <= 60:
+    if not 8 <= seconds <= 90:
         seconds = DEFAULT_SECONDS
     return VideoLength(
         seconds=seconds,
-        max_spoken=seconds + 5,
-        render_min=seconds - 5,
-        render_max=seconds + 6,
-        check_min=seconds - 7,
-        check_max=seconds + 7,
+        max_spoken=seconds + round(seconds * 0.18),
+        render_min=seconds - round(seconds * 0.2),
+        render_max=seconds + round(seconds * 0.2),
+        check_min=seconds - round(seconds * 0.24),
+        check_max=seconds + round(seconds * 0.24),
         min_words=max(14, round(seconds * 1.6)),
     )
