@@ -8,6 +8,7 @@ import {
   BriefcaseBusiness,
   CalendarDays,
   ChartColumn,
+  Clapperboard,
   House,
   Library,
   LogOut,
@@ -43,6 +44,7 @@ const GROUPS: NavGroup[] = [
       { href: "/posts", label: "Posts", icon: Library, match: (path) => path.startsWith("/posts") },
       { href: "/calendar", label: "Calendar", icon: CalendarDays, match: (path) => path.startsWith("/calendar") },
       { href: "/autopilot", label: "Auto-posting", icon: Bot, match: (path) => path.startsWith("/autopilot") },
+      { href: "/video", label: "Video Studio", icon: Clapperboard, match: (path) => path.startsWith("/video") },
     ],
   },
   {

@@ -58,8 +58,13 @@ export type VideoScript = {
   style: string;
 };
 
-// What to do again on the next run, for the Video Studio's "regenerate" buttons: only these scenes' images.
+// What to do again on the next run, for the Video Studio's "regenerate" buttons: only these scenes' images
+// (0-based indexes).
 export type VideoRedo = { scenes?: number[] };
+
+// One caption shown on screen (2-3 words), with its timing in seconds. The audio stage makes them from the
+// narration; you can reword them before a re-render.
+export type CaptionGroup = { text: string; start: number; end: number };
 
 export type VideoJob = {
   id: string;
@@ -366,19 +371,39 @@ export function setVideoStatus(id: string, status: "APPROVED" | "REJECTED" | "CA
   logVideoEvent(id, null, "info", status === "APPROVED" ? "Approved" : status === "REJECTED" ? "Rejected" : "Cancelled");
 }
 
-// Queues the job again from `from` onwards, keeping everything made before that stage (and, with redo.scenes,
-// the other scenes' images too). Also how a failed job is retried.
-export function requeueVideoJob(id: string, from: VideoStage, redo: VideoRedo | null = null, note?: string): void {
+// What has to be made again when a stage is redone: everything that uses its output.
+const DEPENDENTS: Record<VideoStage, VideoStage[]> = {
+  script: ["script", "visuals", "audio", "render", "qc"],
+  visuals: ["visuals", "render", "qc"],
+  audio: ["audio", "render", "qc"],
+  render: ["render", "qc"],
+  qc: ["qc"],
+};
+
+// Queues the job again to redo these stages (and the ones that depend on them), keeping everything else: a new
+// scene image doesn't redo the narration. With redo.scenes, only those scenes' images are drawn again.
+// Also how a failed job is retried (from the stage that failed).
+export function redoVideoStages(id: string, stages: VideoStage[], redo: VideoRedo | null = null, note?: string): void {
   const job = getVideoJob(id);
   if (!job) return;
-  const keep = VIDEO_STAGES.slice(0, VIDEO_STAGES.indexOf(from));
+  const again = new Set(stages.flatMap((stage) => DEPENDENTS[stage]));
+  const completed = job.completedStages.filter((stage) => !again.has(stage));
+  // The visuals stage keeps scene images it finds (so an interrupted run resumes); when all of them are to be
+  // drawn again (a new script, or a full redo), forget them first.
+  let assets = job.assets;
+  if (again.has("visuals") && !redo?.scenes?.length) {
+    const files = Object.fromEntries(
+      Object.entries((job.assets.files as Record<string, string> | undefined) ?? {}).filter(([name]) => !name.startsWith("scene-")),
+    );
+    assets = { ...job.assets, files, image_seconds: {} };
+  }
   db()
     .prepare(
       `UPDATE video_jobs SET status = 'WAITING', stage = ?, progress = 0, attempts = 0, error = NULL, completed_stages = ?,
-         redo = ?, worker_id = NULL, lease_until = NULL, updated_at = ? WHERE id = ?`,
+         redo = ?, assets = ?, worker_id = NULL, lease_until = NULL, updated_at = ? WHERE id = ?`,
     )
-    .run(from, JSON.stringify(job.completedStages.filter((stage) => keep.includes(stage))), redo && JSON.stringify(redo), new Date().toISOString(), id);
-  logVideoEvent(id, from, "info", note ?? `Queued again from the ${from} stage`);
+    .run(nextStage(completed), JSON.stringify(completed), redo && JSON.stringify(redo), JSON.stringify(assets), new Date().toISOString(), id);
+  logVideoEvent(id, nextStage(completed), "info", note ?? `Queued again to redo ${stages.join(", ")}`);
 }
 
 export function deleteVideoJob(id: string): void {
