@@ -64,5 +64,9 @@ class DraftfoxClient:
     def complete_stage(self, job_id: str, stage: str, result: dict[str, Any], seconds: float) -> dict[str, Any]:
         return self.post(f"/api/worker/jobs/{job_id}/stage", {"stage": stage, "result": result, "seconds": seconds})
 
+    def gpu(self, action: str, purpose: str = "", uses: str = "", wait_seconds: float = 0, ttl_seconds: float = 300) -> dict[str, Any]:
+        body = {"action": action, "purpose": purpose, "uses": uses, "waitSeconds": wait_seconds, "ttlSeconds": ttl_seconds}
+        return self.post("/api/worker/gpu", body, timeout=wait_seconds + 30)
+
     def fail_stage(self, job_id: str, stage: str, error: str, retryable: bool = True) -> dict[str, Any]:
         return self.post(f"/api/worker/jobs/{job_id}/fail", {"stage": stage, "error": error, "retryable": retryable})

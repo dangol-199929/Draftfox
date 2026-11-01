@@ -4,7 +4,7 @@
 // Also an activity log (posts published, drafts copied, LinkedIn connected...) that the Reports page reads,
 // the posts you edit, schedule or publish from the Posts page, their images (files in data/images), settings,
 // and the jobs you track on the Jobs page. The Video Studio's tables (video_jobs, video_job_events) are read and
-// written in video-jobs.ts.
+// written in video-jobs.ts, and who is using the graphics card (gpu_lease) in gpu-lock.ts.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -125,6 +125,13 @@ const SCHEMA = `
     at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS video_job_events_job ON video_job_events (job_id, id);
+  CREATE TABLE IF NOT EXISTS gpu_lease (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    holder TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    acquired_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+  );
 `;
 
 // One connection per server process; kept on globalThis so dev hot reloads don't open a new one each time.
@@ -151,7 +158,7 @@ function addColumns(database: DatabaseSync): void {
   }
 }
 
-// Exported for the modules that keep their own tables here (video-jobs.ts).
+// Exported for the modules that keep their own tables here (video-jobs.ts, gpu-lock.ts).
 export function db(): DatabaseSync {
   if (!globalForDb.appDb) {
     mkdirSync(DATA_DIR, { recursive: true });

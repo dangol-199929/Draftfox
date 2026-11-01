@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { deleteImageRecord, getImage, imageInUse, insertImage, listImages, logEvent, type ImageRecord } from "./db.ts";
+import { GpuBusyError, freeComfyUi, unloadOllamaModels, withGpu } from "./gpu-lock.ts";
 import { ImageEngineError, imageEngine, type ImageProgress } from "./image-engines/index.ts";
 import { generateText } from "./ollama.ts";
 
@@ -123,7 +124,26 @@ export async function generateImage(
   imageLock.imageBusy = true;
   try {
     const { width, height } = IMAGE_SIZES[size];
-    const data = await imageEngine().generate({ prompt, width, height, onProgress, signal });
+    const engine = imageEngine();
+    // The graphics card is shared with Ollama and the video worker (see gpu-lock.ts).
+    const data = await withGpu(
+      `Images: ${engine.label}`,
+      async () => {
+        // ComfyUI's model and Ollama's don't both fit in video memory.
+        if (engine.id === "comfyui") await unloadOllamaModels();
+        try {
+          return await engine.generate({ prompt, width, height, onProgress, signal });
+        } finally {
+          if (engine.id === "comfyui") await freeComfyUi();
+        }
+      },
+      {
+        signal,
+        onWait: () => onProgress?.({ completed: 0, total: 1, label: "Waiting for the graphics card" }),
+      },
+    ).catch((error: unknown) => {
+      throw error instanceof GpuBusyError ? new ImageEngineError("busy", error.message) : error;
+    });
     const mime = sniffImageType(data);
     if (!mime) throw new ImageEngineError("generation_failed", "The image engine returned something that isn't an image.");
     return await saveImage(data, mime, "generated", prompt);
