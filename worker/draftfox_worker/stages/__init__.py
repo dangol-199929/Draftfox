@@ -6,15 +6,18 @@ from collections.abc import Callable
 from typing import Any
 
 from ..context import StageContext
-from . import dummy
+from . import audio, dummy, qc, render, script, visuals
 
 Stage = Callable[[StageContext], dict[str, Any]]
 
-# Real stages are added here as they're built; any stage missing falls back to the dummy one.
-REAL_STAGES: dict[str, Stage] = {}
+REAL_STAGES: dict[str, Stage] = {
+    "script": script.run,
+    "visuals": visuals.run,
+    "audio": audio.run,
+    "render": render.run,
+    "qc": qc.run,
+}
 
 
 def stage_for(name: str, use_dummy: bool) -> Stage:
-    if use_dummy or name not in REAL_STAGES:
-        return dummy.STAGES[name]
-    return REAL_STAGES[name]
+    return dummy.STAGES[name] if use_dummy else REAL_STAGES[name]

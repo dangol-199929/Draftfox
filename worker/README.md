@@ -1,20 +1,32 @@
 # Draftfox video worker
 
 Makes the Video Studio's short videos. It runs next to Draftfox (on the same PC, or another computer on the
-network) and talks to it only over HTTP: it claims a queued video, runs its stages one by one (script, visuals,
-audio, render, quality check), reports each one, and moves on. Files go in `data/videos/<job id>/`.
+network) and talks to Draftfox only over HTTP: it claims a queued video, runs its stages one by one, reports each
+one, and moves on. Files go in `data/videos/<job id>/`.
+
+| Stage | What it does | Uses |
+| --- | --- | --- |
+| script | Title, ~25-word narration, 2-3 scenes, post caption, hashtags, mood (Draftfox writes it with `VIDEO_SCRIPT_MODEL`) | Ollama, GPU |
+| visuals | One 768x1344 image per scene, in an early-2000s low-poly game look | ComfyUI, GPU |
+| audio | The narration spoken (at most 12 s; sped up a little or rewritten shorter if needed), word timings, captions (ASS, 2-3 words at a time) | Kokoro and faster-whisper, CPU |
+| render | 1080x1920, 30 fps, H.264/AAC, ~10 s: slow zoom/pan per scene, crossfades, low-res reduced-colour retro finish, burned-in captions, narration and music from `data/videos/music/<mood>/` (optional) | FFmpeg |
+| qc | Length, size, codec, sound, captions, black frames, a full decode, and no other video on the same topic | FFmpeg |
 
 Each finished stage is saved, so if the worker stops or the PC restarts, the video carries on from the last
-finished stage. A stage that fails is tried up to 3 times; then the video is marked failed with the reason.
+finished stage. A stage that fails is tried up to 3 times; then the video is marked failed with the reason (a
+failed quality check stops at once). The GPU is shared through Draftfox's GPU lease: the app's own requests (posts,
+images, auto-posting) go first, and the worker gives the card back between stages.
 
 ## Set up (Windows)
 
-1. Python 3.12: `winget install Python.Python.3.12`
+1. Python 3.12 (`winget install Python.Python.3.12`) and FFmpeg (`winget install Gyan.FFmpeg`).
 2. In this folder: `py -3.12 -m venv .venv` (or the full path to Python 3.12's `python.exe`), then
-   `.venv\Scripts\pip install -r requirements.txt`
-3. Put `WORKER_TOKEN=<a long random string>` in Draftfox's `.env` and restart Draftfox. The worker reads the same
+   `.venv\Scripts\pip install -r requirements.txt`. The first run downloads Kokoro's voice model and Whisper's
+   `base.en` model from Hugging Face.
+3. ComfyUI with FLUX.2 Klein 4B (ComfyUI Desktop's "Flux.2 Klein 4B Distilled" template downloads it).
+4. Put `WORKER_TOKEN=<a long random string>` in Draftfox's `.env` and restart Draftfox. The worker reads the same
    file. On another computer, put `WORKER_TOKEN` and `DRAFTFOX_URL=http://<draftfox pc>:3000` in `worker/.env`.
-4. Run it: `.venv\Scripts\python worker.py` (or `--once` for a single job).
+5. Run it: `.venv\Scripts\python worker.py` (or `--once` for a single job).
 
 ## Settings (in .env or worker/.env)
 
@@ -23,6 +35,17 @@ finished stage. A stage that fails is tried up to 3 times; then the video is mar
 | `WORKER_TOKEN` | (required) | Must match Draftfox's |
 | `DRAFTFOX_URL` | `http://127.0.0.1:3000` | Where Draftfox runs |
 | `WORKER_ID` | `<computer name>-worker` | Name shown in the Video Studio |
+| `COMFYUI_URL` | `http://127.0.0.1:8188` | Where ComfyUI runs |
+| `COMFYUI_START` | | A command that starts ComfyUI; the worker runs it when nothing answers at `COMFYUI_URL` |
+| `VIDEO_IMAGE_MODEL` | `flux2-klein` | `flux2-klein` (about 10 s an image on an RTX 5050) or `sdxl` (SDXL base 1.0, about 20 s) |
+| `VIDEO_FLUX_UNET` | `flux-2-klein-4b-fp8.safetensors` | FLUX.2 Klein model file |
+| `VIDEO_SDXL_CHECKPOINT` | `sd_xl_base_1.0.safetensors` | SDXL checkpoint file |
+| `VIDEO_VOICE` | `af_heart` | Kokoro voice (American English voices start with `a`) |
+| `VIDEO_WHISPER_MODEL` | `base.en` | faster-whisper model for caption timings (`small.en` is slower, a little more exact) |
+| `FFMPEG`, `FFPROBE` | on PATH | Full paths if they aren't on PATH |
 | `WORKER_DUMMY` | | `1` runs placeholder stages only, for testing |
 
 Topics starting with `test:` always use the placeholder stages; `test: fail` fails on purpose.
+
+Background music: put tracks (mp3, wav, m4a, ogg, flac) in `data/videos/music/<mood>/`, where mood is one of
+calm, upbeat, inspiring, dramatic, playful, mysterious. Without any, videos have narration only.
