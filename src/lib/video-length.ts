@@ -4,13 +4,14 @@
 // Video Studio's hints use the default.
 const DEFAULT_SECONDS = 50;
 
-// How fast the narrator speaks: about 2.4 words a second at speed 1.0, measured with Kokoro's bm_george, bm_lewis and
-// am_michael voices (see DraftfoxHub/voice-samples/), scaled by VIDEO_VOICE_SPEED (default 0.9, as the worker uses).
+// How fast the narrator speaks: about 3 words a second at speed 1.0, measured on a real narration (bm_george at
+// 0.9: 109 words in 40.2 s). Short sample lines with more pauses read slower, about 2.4 (DraftfoxHub/voice-samples/).
+// Scaled by VIDEO_VOICE_SPEED (default 0.9, as the worker uses).
 function voiceSpeed(): number {
   const value = Number(typeof process === "undefined" ? undefined : process.env.VIDEO_VOICE_SPEED);
   return Number.isFinite(value) && value >= 0.5 && value <= 2 ? value : 0.9;
 }
-export const WORDS_PER_SECOND = 2.4 * voiceSpeed();
+export const WORDS_PER_SECOND = 3.0 * voiceSpeed();
 
 function targetSeconds(): number {
   const value = Number(typeof process === "undefined" ? undefined : process.env.VIDEO_TARGET_SECONDS);
