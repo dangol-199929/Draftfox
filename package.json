@@ -14,7 +14,8 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test:jobs": "node --env-file-if-exists=.env scripts/test-jobs.ts",
-    "test:posts": "node --env-file-if-exists=.env scripts/test-posts.ts"
+    "test:posts": "node --env-file-if-exists=.env scripts/test-posts.ts",
+    "set-password": "node scripts/set-password.ts"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

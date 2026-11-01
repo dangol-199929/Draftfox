@@ -10,6 +10,7 @@ import {
   ChartColumn,
   House,
   Library,
+  LogOut,
   Menu,
   PenLine,
   Search,
@@ -228,12 +229,33 @@ function NavGroups({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+function SignOutButton() {
+  async function signOut() {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    window.location.assign("/login");
+  }
+  return (
+    <button
+      type="button"
+      onClick={signOut}
+      className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+    >
+      <LogOut className="size-3.5" />
+      Sign out
+    </button>
+  );
+}
+
 // Left sidebar on desktop; a slim top bar, a bottom tab bar and a More drawer on phones and tablets.
 export function SiteHeader() {
+  const pathname = usePathname();
   const isActive = useActive();
   const [menuOpen, setMenuOpen] = useState(false);
   const tabs = TAB_BAR.map((href) => ALL_LINKS.find((link) => link.href === href)!);
   const moreActive = !tabs.some(isActive);
+
+  // The sign-in page has no navigation (and its status checks would need a session).
+  if (pathname === "/login") return null;
 
   return (
     <>
@@ -250,6 +272,7 @@ export function SiteHeader() {
             <span className="text-xs text-muted-foreground">Theme</span>
             <ThemeToggle />
           </div>
+          <SignOutButton />
         </div>
       </aside>
 
@@ -303,8 +326,9 @@ export function SiteHeader() {
           <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
             <NavGroups onNavigate={() => setMenuOpen(false)} />
           </div>
-          <div className="border-t border-sidebar-border px-3 py-3">
+          <div className="grid gap-2 border-t border-sidebar-border px-3 py-3">
             <WorkspaceStatus />
+            <SignOutButton />
           </div>
         </SheetContent>
       </Sheet>
