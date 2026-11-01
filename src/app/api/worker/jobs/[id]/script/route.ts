@@ -22,7 +22,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const requested = Number(input.body.maxWords);
   const maxWords = Number.isFinite(requested) && requested >= 12 ? Math.min(requested, NARRATION_WORDS.max) : NARRATION_WORDS.max;
   try {
-    const result = await generateVideoScript(held.job.topic, { maxWords, skipGpuLease: true, signal: request.signal });
+    const result = await generateVideoScript(held.job.topic, {
+      maxWords,
+      skipGpuLease: true,
+      signal: request.signal,
+      seriesId: held.job.seriesId,
+    });
     return Response.json(result);
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 502 });

@@ -4,6 +4,7 @@
 import { generateJson } from "./ollama.ts";
 import type { VideoScript } from "./video-jobs.ts";
 import { VIDEO_LENGTH } from "./video-length.ts";
+import { findSeries } from "./video-series.ts";
 
 // The model that writes video scripts. Separate from OLLAMA_MODEL (posts), so each can be tuned on its own.
 export const VIDEO_SCRIPT_MODEL = process.env.VIDEO_SCRIPT_MODEL?.trim() || "qwen3:4b";
@@ -70,7 +71,14 @@ For length only, here is a narration of the right size (${EXAMPLE_NARRATION.spli
 The narration must be about the topic you're given.
 Reply with the JSON only.`;
 
-export type ScriptOptions = { model?: string; maxWords?: number; signal?: AbortSignal; skipGpuLease?: boolean };
+export type ScriptOptions = {
+  model?: string;
+  maxWords?: number;
+  signal?: AbortSignal;
+  skipGpuLease?: boolean;
+  // Adds that series' rules (see video-series.ts) to the instructions.
+  seriesId?: string | null;
+};
 
 export function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
@@ -146,6 +154,8 @@ export async function generateVideoScript(topic: string, options: ScriptOptions 
   const model = options.model ?? VIDEO_SCRIPT_MODEL;
   const maxWords = options.maxWords ?? NARRATION_WORDS.max;
   const started = Date.now();
+  const series = findSeries(options.seriesId);
+  const system = series ? `${SYSTEM}\n\n${series.scriptRules}` : SYSTEM;
   let feedback = "";
   let lastProblems: string[] = [];
   // A script whose only problem is a narration a few words off; used if no try gets it exactly right
@@ -155,7 +165,7 @@ export async function generateVideoScript(topic: string, options: ScriptOptions 
     const prompt = `Topic: ${topic}${maxWords < NARRATION_WORDS.max ? `\nThe narration must be at most ${maxWords} words.` : ""}${feedback}`;
     let reply: unknown;
     try {
-      reply = await generateJson<unknown>(prompt, SYSTEM, SCHEMA, {
+      reply = await generateJson<unknown>(prompt, system, SCHEMA, {
         model,
         temperature: 0.7,
         signal: options.signal,
@@ -168,10 +178,12 @@ export async function generateVideoScript(topic: string, options: ScriptOptions 
       continue;
     }
     lastProblems = scriptProblems(reply, maxWords);
+    const quoted = series?.noQuotes === true && /["“”]/.test((reply as Partial<VideoScript> | null)?.narration ?? "");
+    if (quoted) lastProblems.push("the narration has quotation marks; paraphrase instead of quoting (no direct quotes).");
     if (!lastProblems.length) {
       return { script: tidy(reply as VideoScript, topic), attempts: attempt, model, seconds: (Date.now() - started) / 1000 };
     }
-    if (!nearMiss && !scriptProblems(reply, maxWords + NEAR_MISS_WORDS, NEAR_MISS_WORDS).length) {
+    if (!nearMiss && !quoted && !scriptProblems(reply, maxWords + NEAR_MISS_WORDS, NEAR_MISS_WORDS).length) {
       nearMiss = { script: reply as VideoScript, attempt };
     }
     feedback = `\n\nYour last reply had these problems; fix them:\n- ${lastProblems.join("\n- ")}`;

@@ -1,6 +1,7 @@
 import { rm } from "node:fs/promises";
 import { badRequest, readJsonObject } from "@/lib/api.ts";
 import { listPublications } from "@/lib/video-publications.ts";
+import { syncTopicWithJob } from "@/lib/video-topics.ts";
 import {
   deleteVideoJob,
   getVideoJob,
@@ -70,6 +71,7 @@ export async function PATCH(request: Request, { params }: Params) {
       return badRequest("Only a finished video can be approved or rejected.", 409);
     }
     setVideoStatus(id, action === "approve" ? "APPROVED" : "REJECTED");
+    syncTopicWithJob(id, action === "approve" ? "approved" : "rejected");
   } else if (action === "cancel") {
     if (["APPROVED", "REJECTED", "CANCELLED"].includes(job.status)) return badRequest("This video is already done.", 409);
     setVideoStatus(id, "CANCELLED");
@@ -122,6 +124,7 @@ export async function DELETE(_request: Request, { params }: Params) {
   const { id } = await params;
   if (!getVideoJob(id)) return badRequest("No such video.", 404);
   deleteVideoJob(id);
+  syncTopicWithJob(id, "deleted");
   await rm(jobDir(id), { recursive: true, force: true });
   return Response.json({ ok: true });
 }

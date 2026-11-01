@@ -32,6 +32,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { TopicIdeas } from "@/components/video-topics";
 import { toast } from "@/components/ui/toaster";
 import type { GpuLease } from "@/lib/gpu-lock.ts";
 import type { CaptionGroup, VideoEvent, VideoJob, VideoStatus, WorkerStatus } from "@/lib/video-jobs.ts";
@@ -121,6 +122,12 @@ export function VideoStudio() {
         />
         <WorkerCard info={worker} />
       </div>
+      <TopicIdeas
+        onMade={(job) => {
+          setSelected(job.id);
+          void refresh();
+        }}
+      />
       {loadError && (
         <Alert variant="destructive">
           <AlertTitle>Couldn&apos;t load the videos</AlertTitle>
