@@ -55,7 +55,7 @@ function copiesExample(narration: string): boolean {
 
 const SYSTEM = `You write scripts for ${VIDEO_LENGTH.seconds}-second vertical videos (YouTube Shorts, Reels, TikTok).
 Rules:
-- narration: what the voice says, ${NARRATION_WORDS.min} to ${NARRATION_WORDS.max} words, about ${VIDEO_LENGTH.seconds} seconds spoken. Plain spoken English, one clear idea, a hook in the first words. No emojis, hashtags or stage directions.
+- narration: what the voice says, about ${NARRATION_WORDS.target} words (never fewer than ${NARRATION_WORDS.min} or more than ${NARRATION_WORDS.max}), about ${VIDEO_LENGTH.seconds} seconds spoken. Plain spoken English, one clear idea, a hook in the first words. No emojis, hashtags or stage directions.
 - scenes: ${SCENES.min} to ${SCENES.max}, shown in order while the narration plays, each following the part of the narration it shows.
   - image_prompt: one picture for an image generator, under 60 words: subject, setting, composition, lighting. Vertical framing. No text, letters, logos or real people's names in the picture.
   - on_screen_text: a short caption shown over the scene, 2 to 6 words.
@@ -93,9 +93,9 @@ export function scriptProblems(script: unknown, maxWords = NARRATION_WORDS.max, 
   if (copiesExample(text("narration"))) {
     problems.push("the narration copies the example narration; write a new one about the topic.");
   } else if (words < minWords) {
-    problems.push(`narration has ${words} words; it must have ${minWords} to ${maxWords}. Add about ${Math.ceil((minWords + maxWords) / 2) - words} words.`);
+    problems.push(`narration has ${words} words; it must have ${minWords} to ${maxWords}. Add about ${Math.min(NARRATION_WORDS.target, maxWords) - words} words.`);
   } else if (words > maxWords) {
-    problems.push(`narration has ${words} words; it must have ${minWords} to ${maxWords}. Remove about ${words - Math.floor((minWords + maxWords) / 2)} words.`);
+    problems.push(`narration has ${words} words; it must have ${minWords} to ${maxWords}. Remove about ${words - Math.min(NARRATION_WORDS.target, Math.floor((minWords + maxWords) / 2))} words.`);
   }
   if (!Array.isArray(value.scenes) || value.scenes.length < SCENES.min || value.scenes.length > SCENES.max) {
     problems.push(`scenes must have ${SCENES.min} to ${SCENES.max} items.`);

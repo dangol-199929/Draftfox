@@ -649,7 +649,7 @@ function ScriptEditor({ job, locked, act }: { job: VideoJob; locked: boolean; ac
         <Label htmlFor="video-narration">Narration</Label>
         <Textarea id="video-narration" rows={4} value={narration} onChange={(event) => setNarration(event.target.value)} disabled={locked} />
         <p className={cn("text-xs text-muted-foreground", (words < VIDEO_LENGTH.words.min - 4 || words > VIDEO_LENGTH.words.max + 4) && "text-warning")}>
-          {words} words · about {Math.round(words / 2.6)} s spoken (aim for {VIDEO_LENGTH.words.min}-{VIDEO_LENGTH.words.max} words, under {VIDEO_LENGTH.maxSpokenSeconds} s)
+          {words} words · about {Math.round(words / 2.6)} s spoken (aim for about {VIDEO_LENGTH.words.target} words, under {VIDEO_LENGTH.maxSpokenSeconds} s)
           {job.assets.narration_seconds ? ` · recorded: ${job.assets.narration_seconds as number} s` : ""}
         </p>
       </div>

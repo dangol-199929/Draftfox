@@ -13,8 +13,9 @@ export function videoLength(seconds = targetSeconds()) {
   const scenesMin = Math.max(2, Math.round(seconds / 5));
   return {
     seconds,
-    // Spoken at about 2.6 words a second, with room for pauses: 55-75 words for 25 s.
-    words: { min: Math.round(seconds * 2.2), max: Math.round(seconds * 3) },
+    // Spoken at about 2.6 words a second: 60-75 words for 25 s, aiming for 65. The script model tends to write
+    // short, so the minimum is close to the target.
+    words: { min: Math.round(seconds * 2.4), target: Math.round(seconds * 2.6), max: Math.round(seconds * 3) },
     // 5-7 scenes for 25 s, so each picture stays on screen for 3-5 s.
     scenes: { min: scenesMin, max: scenesMin + 2 },
     // The longest the narration may be once spoken, and what the quality check accepts (18-32 s for 25 s).
