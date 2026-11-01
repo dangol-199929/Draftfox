@@ -8,6 +8,7 @@ import {
   Copy,
   Cpu,
   Download,
+  ExternalLink,
   Film,
   ImageIcon,
   ListPlus,
@@ -19,6 +20,7 @@ import {
   ScrollText,
   Subtitles,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -29,9 +31,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "@/components/ui/toaster";
 import type { GpuLease } from "@/lib/gpu-lock.ts";
 import type { CaptionGroup, VideoEvent, VideoJob, VideoStatus, WorkerStatus } from "@/lib/video-jobs.ts";
+import type { VideoPublication } from "@/lib/video-publications.ts";
 import { cn } from "@/lib/utils";
 
 type Tone = "brand" | "success" | "warning" | "info" | "muted" | "destructive";
@@ -289,13 +293,17 @@ function JobList({ jobs, selected, onSelect }: { jobs: VideoJob[] | null; select
 
 function JobDetail({ job, onChanged, onDeleted }: { job: VideoJob; onChanged: () => Promise<void>; onDeleted: () => void }) {
   const [events, setEvents] = useState<VideoEvent[]>([]);
+  const [publications, setPublications] = useState<VideoPublication[]>([]);
   const [busy, setBusy] = useState("");
   const running = RUNNING.includes(job.status);
   const locked = running || busy !== "";
 
   useEffect(() => {
-    api<{ events: VideoEvent[] }>(`/api/video/jobs/${job.id}`)
-      .then((body) => setEvents(body.events))
+    api<{ events: VideoEvent[]; publications: VideoPublication[] }>(`/api/video/jobs/${job.id}`)
+      .then((body) => {
+        setEvents(body.events);
+        setPublications(body.publications ?? []);
+      })
       .catch(() => {});
   }, [job.id, job.updatedAt]);
 
@@ -326,6 +334,7 @@ function JobDetail({ job, onChanged, onDeleted }: { job: VideoJob; onChanged: ()
   }
 
   const hasVideo = Boolean(job.outputPath && job.completedStages.includes("render"));
+  const youtube = publications.find((publication) => publication.platform === "youtube");
   const timings = job.assets.timings as Record<string, number> | undefined;
 
   return (
@@ -447,12 +456,166 @@ function JobDetail({ job, onChanged, onDeleted }: { job: VideoJob; onChanged: ()
             </div>
           )}
         </div>
+
+        {(job.status === "APPROVED" || youtube?.status === "uploaded") && hasVideo && job.script && (
+          <YouTubeUpload
+            key={job.id}
+            job={job}
+            publication={youtube}
+            onDone={async (next) => {
+              setPublications(next);
+              await onChanged();
+            }}
+          />
+        )}
       </CardContent>
     </Card>
   );
 }
 
-type Act = (label: string, body: object, done?: string) => Promise<void>;
+const PRIVACY = [
+  { value: "private", label: "Private", hint: "Only you can see it." },
+  { value: "unlisted", label: "Unlisted", hint: "Anyone with the link can see it." },
+  { value: "public", label: "Public", hint: "Everyone can find and see it." },
+] as const;
+
+// The upload form for an approved video, or its YouTube link once it's uploaded. Privacy has no default on purpose.
+function YouTubeUpload({
+  job,
+  publication,
+  onDone,
+}: {
+  job: VideoJob;
+  publication: VideoPublication | undefined;
+  onDone: (publications: VideoPublication[]) => Promise<void>;
+}) {
+  const script = job.script!;
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState(script.title.slice(0, 100));
+  const [description, setDescription] = useState(
+    [script.post_caption, script.hashtags.map((tag) => (tag.startsWith("#") ? tag : `#${tag}`)).join(" ")].filter(Boolean).join("\n\n"),
+  );
+  const [tags, setTags] = useState(script.hashtags.map((tag) => tag.replace(/^#/, "")).join(", "));
+  const [privacy, setPrivacy] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+
+  if (publication?.status === "uploaded" && publication.url) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-success/25 bg-success-soft p-3 text-sm text-success">
+        <Check className="size-4" />
+        On YouTube:
+        <a href={publication.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium underline underline-offset-2">
+          {publication.url}
+          <ExternalLink className="size-3.5" />
+        </a>
+      </div>
+    );
+  }
+
+  const lastError = error || (publication?.status === "failed" ? publication.error ?? "" : "");
+  const needsReconnect = /reconnect/i.test(lastError);
+
+  async function upload() {
+    const choice = PRIVACY.find((option) => option.value === privacy);
+    if (!choice) return;
+    if (!window.confirm(`Upload "${title}" to YouTube as ${choice.label}?`)) return;
+    setUploading(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/video/jobs/${job.id}/youtube`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, description, tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean), privacy }),
+      });
+      const body = (await response.json().catch(() => ({}))) as { error?: string; publications?: VideoPublication[] };
+      if (body.publications) await onDone(body.publications);
+      if (!response.ok) throw new Error(body.error ?? `Upload failed (${response.status})`);
+      toast("Uploaded to YouTube");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className="grid gap-2">
+        <div>
+          <Button size="sm" onClick={() => setOpen(true)} disabled={publication?.status === "uploading"}>
+            <Upload />
+            {publication?.status === "uploading" ? "Uploading to YouTube…" : "Upload to YouTube"}
+          </Button>
+        </div>
+        {lastError && <UploadError message={lastError} needsReconnect={needsReconnect} />}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 rounded-lg border p-4">
+      <p className="text-sm font-medium">Upload to YouTube</p>
+      <div className="grid gap-2">
+        <Label htmlFor="yt-title">Title</Label>
+        <Input id="yt-title" maxLength={100} value={title} onChange={(event) => setTitle(event.target.value)} disabled={uploading} />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="yt-description">Description</Label>
+        <Textarea id="yt-description" rows={4} maxLength={5000} value={description} onChange={(event) => setDescription(event.target.value)} disabled={uploading} />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="yt-tags">Tags (separated by commas)</Label>
+        <Input id="yt-tags" value={tags} onChange={(event) => setTags(event.target.value)} disabled={uploading} />
+      </div>
+      <div className="grid gap-2">
+        <Label>Visibility</Label>
+        <ToggleGroup type="single" variant="outline" aria-label="Visibility" value={privacy} onValueChange={setPrivacy} disabled={uploading}>
+          {PRIVACY.map((option) => (
+            <ToggleGroupItem key={option.value} value={option.value}>
+              {option.label}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+        <p className="text-xs text-muted-foreground">
+          {PRIVACY.find((option) => option.value === privacy)?.hint ?? "Pick one before uploading."} The video is marked as
+          made with AI (altered or synthetic content) and not made for kids.
+        </p>
+      </div>
+      {lastError && <UploadError message={lastError} needsReconnect={needsReconnect} />}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" onClick={upload} disabled={uploading || !privacy || !title.trim()}>
+          {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
+          {uploading ? "Uploading…" : "Upload"}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setOpen(false)} disabled={uploading}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function UploadError({ message, needsReconnect }: { message: string; needsReconnect: boolean }) {
+  return (
+    <Alert variant="destructive">
+      <AlertTitle>YouTube upload failed</AlertTitle>
+      <AlertDescription>
+        {message}
+        {needsReconnect && (
+          <>
+            {" "}
+            <a href="/settings#youtube" className="font-medium underline underline-offset-2">
+              Open Settings › YouTube
+            </a>
+          </>
+        )}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+type Act =(label: string, body: object, done?: string) => Promise<void>;
 
 function ScriptEditor({ job, locked, act }: { job: VideoJob; locked: boolean; act: Act }) {
   const script = job.script!;

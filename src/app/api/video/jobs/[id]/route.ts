@@ -1,5 +1,6 @@
 import { rm } from "node:fs/promises";
 import { badRequest, readJsonObject } from "@/lib/api.ts";
+import { listPublications } from "@/lib/video-publications.ts";
 import {
   deleteVideoJob,
   getVideoJob,
@@ -23,7 +24,7 @@ export async function GET(_request: Request, { params }: Params) {
   const { id } = await params;
   const job = getVideoJob(id);
   if (!job) return badRequest("No such video.", 404);
-  return Response.json({ job, events: listVideoEvents(id) });
+  return Response.json({ job, events: listVideoEvents(id), publications: listPublications(id) });
 }
 
 const text = (value: unknown, max: number) => (typeof value === "string" ? value.trim().slice(0, max) : "");

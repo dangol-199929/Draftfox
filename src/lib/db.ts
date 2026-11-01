@@ -4,7 +4,7 @@
 // Also an activity log (posts published, drafts copied, LinkedIn connected...) that the Reports page reads,
 // the posts you edit, schedule or publish from the Posts page, their images (files in data/images), settings,
 // and the jobs you track on the Jobs page. The Video Studio's tables (video_jobs, video_job_events) are read and
-// written in video-jobs.ts, and who is using the graphics card (gpu_lease) in gpu-lock.ts.
+// written in video-jobs.ts, where they were uploaded (video_publications) in video-publications.ts, and who is using the graphics card (gpu_lease) in gpu-lock.ts.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -125,6 +125,19 @@ const SCHEMA = `
     at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS video_job_events_job ON video_job_events (job_id, id);
+  CREATE TABLE IF NOT EXISTS video_publications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    status TEXT NOT NULL,
+    remote_id TEXT,
+    url TEXT,
+    error TEXT,
+    upload_url TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (job_id, platform)
+  );
   CREATE TABLE IF NOT EXISTS gpu_lease (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     holder TEXT NOT NULL,

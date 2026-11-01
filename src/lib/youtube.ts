@@ -193,6 +193,166 @@ export async function disconnect(): Promise<void> {
   await rm(CONNECTION_FILE, { force: true });
 }
 
+// --- Uploading ---
+
+const UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status";
+export const PRIVACY_STATUSES = ["private", "unlisted", "public"] as const;
+export type PrivacyStatus = (typeof PRIVACY_STATUSES)[number];
+
+export type UploadDetails = {
+  title: string;
+  description: string;
+  tags: string[];
+  privacy: PrivacyStatus;
+};
+
+export type UploadedVideo = { id: string; url: string };
+
+// Uploads an MP4 with YouTube's resumable protocol. Pass the session URL of an attempt that broke off to continue
+// it; onSession is called with a new session URL as soon as YouTube hands one out, so it can be saved.
+export async function uploadVideo(
+  data: Uint8Array,
+  details: UploadDetails,
+  session: string | null,
+  onSession: (url: string | null) => void,
+): Promise<UploadedVideo> {
+  let offset = 0;
+  if (session) {
+    const status = await queryUpload(session, data.length);
+    if (status.done) return status.done;
+    if (status.offset === null) session = null;
+    else offset = status.offset;
+  }
+  if (!session) {
+    session = await startUpload(data.length, details);
+    onSession(session);
+  }
+
+  // A dropped connection is resumed from where YouTube says the upload got to.
+  for (let attempt = 1; ; attempt++) {
+    const token = await getAccessToken();
+    let response: Response;
+    try {
+      response = await fetch(session, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "video/mp4",
+          "Content-Range": `bytes ${offset}-${data.length - 1}/${data.length}`,
+        },
+        body: new Uint8Array(data.subarray(offset)),
+      });
+    } catch {
+      if (attempt >= 3) throw new YouTubeError(502, "The upload kept breaking off. Check your internet connection and try again.");
+      const status = await queryUpload(session, data.length);
+      if (status.done) return status.done;
+      if (status.offset === null) throw new YouTubeError(502, "YouTube forgot the interrupted upload. Try again.");
+      offset = status.offset;
+      continue;
+    }
+    if (response.ok) return uploadedVideo(response);
+    if (response.status >= 500 && attempt < 3) {
+      const status = await queryUpload(session, data.length);
+      if (status.done) return status.done;
+      if (status.offset !== null) {
+        offset = status.offset;
+        continue;
+      }
+    }
+    if (response.status === 404 || response.status === 410) onSession(null);
+    throw await uploadError(response);
+  }
+}
+
+// Sends the title, description and settings; YouTube answers with the URL to send the video to.
+async function startUpload(size: number, details: UploadDetails): Promise<string> {
+  const token = await getAccessToken();
+  let response: Response;
+  try {
+    response = await fetch(UPLOAD_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Upload-Content-Length": String(size),
+        "X-Upload-Content-Type": "video/mp4",
+      },
+      body: JSON.stringify({
+        snippet: {
+          title: details.title,
+          description: details.description,
+          tags: details.tags,
+          categoryId: "22",
+        },
+        status: {
+          privacyStatus: details.privacy,
+          selfDeclaredMadeForKids: false,
+          // The videos are made with AI images and an AI voice, so they're declared as altered or synthetic media.
+          containsSyntheticMedia: true,
+        },
+      }),
+    });
+  } catch {
+    throw new YouTubeError(502, "Couldn't reach YouTube. Check your internet connection and try again.");
+  }
+  if (!response.ok) throw await uploadError(response);
+  const location = response.headers.get("location");
+  if (!location) throw new YouTubeError(502, "YouTube didn't return an upload address.");
+  return location;
+}
+
+// Asks how much of an upload YouTube has. offset null means the session is gone and the upload must start over.
+async function queryUpload(session: string, size: number): Promise<{ done?: UploadedVideo; offset: number | null }> {
+  const token = await getAccessToken();
+  let response: Response;
+  try {
+    response = await fetch(session, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Range": `bytes */${size}` },
+    });
+  } catch {
+    throw new YouTubeError(502, "Couldn't reach YouTube. Check your internet connection and try again.");
+  }
+  if (response.ok) return { done: await uploadedVideo(response), offset: size };
+  if (response.status === 308) {
+    const range = response.headers.get("range")?.match(/bytes=0-(\d+)/);
+    return { offset: range ? Number(range[1]) + 1 : 0 };
+  }
+  return { offset: null };
+}
+
+async function uploadedVideo(response: Response): Promise<UploadedVideo> {
+  const video = (await response.json().catch(() => ({}))) as { id?: string };
+  if (!video.id) throw new YouTubeError(502, "YouTube accepted the upload but didn't return the video's ID.");
+  return { id: video.id, url: `https://youtube.com/shorts/${video.id}` };
+}
+
+async function uploadError(response: Response): Promise<YouTubeError> {
+  const text = await response.text().catch(() => "");
+  let reason = "";
+  let message = text.slice(0, 300);
+  try {
+    const body = JSON.parse(text) as { error?: { message?: string; errors?: { reason?: string }[] } };
+    reason = body.error?.errors?.[0]?.reason ?? "";
+    message = body.error?.message ?? message;
+  } catch {
+    // Not JSON; keep the raw text.
+  }
+  if (response.status === 401) {
+    return new YouTubeError(401, "YouTube refused the sign-in. Go to Settings and click Reconnect YouTube.");
+  }
+  if (reason === "quotaExceeded" || reason === "uploadLimitExceeded") {
+    return new YouTubeError(429, "YouTube's daily upload limit is used up. Try again tomorrow.");
+  }
+  if (reason === "youtubeSignupRequired") {
+    return new YouTubeError(403, "This Google account has no YouTube channel yet. Create one at youtube.com, then try again.");
+  }
+  return new YouTubeError(
+    response.status >= 500 ? 502 : response.status,
+    `YouTube rejected the upload (${response.status}${reason ? `, ${reason}` : ""})${message ? `: ${message}` : "."}`,
+  );
+}
+
 // Refresh a minute early so a token can't expire mid-request.
 function isExpired(connection: Connection): boolean {
   return Date.parse(connection.expiresAt) - 60_000 <= Date.now();
