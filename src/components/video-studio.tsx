@@ -36,6 +36,7 @@ import { toast } from "@/components/ui/toaster";
 import type { GpuLease } from "@/lib/gpu-lock.ts";
 import type { CaptionGroup, VideoEvent, VideoJob, VideoStatus, WorkerStatus } from "@/lib/video-jobs.ts";
 import type { VideoPublication } from "@/lib/video-publications.ts";
+import { VIDEO_LENGTH } from "@/lib/video-length.ts";
 import { cn } from "@/lib/utils";
 
 type Tone = "brand" | "success" | "warning" | "info" | "muted" | "destructive";
@@ -170,7 +171,7 @@ function AddTopics({ onAdded }: { onAdded: (jobs: VideoJob[]) => void }) {
           New videos
         </CardTitle>
         <CardDescription>
-          One topic per line. Each becomes a 10-second vertical video: script, scene images, voice, captions and music,
+          One topic per line. Each becomes a {VIDEO_LENGTH.seconds}-second vertical video: script, scene images, voice, captions and music,
           made on this PC. Nothing is posted anywhere.
         </CardDescription>
       </CardHeader>
@@ -647,8 +648,8 @@ function ScriptEditor({ job, locked, act }: { job: VideoJob; locked: boolean; ac
       <div className="grid gap-2">
         <Label htmlFor="video-narration">Narration</Label>
         <Textarea id="video-narration" rows={4} value={narration} onChange={(event) => setNarration(event.target.value)} disabled={locked} />
-        <p className={cn("text-xs text-muted-foreground", (words < 14 || words > 32) && "text-warning")}>
-          {words} words · about {Math.round(words / 2.6)} s spoken (keep it under 12 s)
+        <p className={cn("text-xs text-muted-foreground", (words < VIDEO_LENGTH.words.min - 4 || words > VIDEO_LENGTH.words.max + 4) && "text-warning")}>
+          {words} words · about {Math.round(words / 2.6)} s spoken (aim for {VIDEO_LENGTH.words.min}-{VIDEO_LENGTH.words.max} words, under {VIDEO_LENGTH.maxSpokenSeconds} s)
           {job.assets.narration_seconds ? ` · recorded: ${job.assets.narration_seconds as number} s` : ""}
         </p>
       </div>

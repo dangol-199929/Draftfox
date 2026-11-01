@@ -1,6 +1,6 @@
 """Render stage: the scene images, narration, captions and (optional) music become a 1080x1920, 30 fps H.264/AAC MP4
-of about 10 seconds. Each scene slowly zooms or pans, scenes crossfade, and the picture gets a PS2-era finish:
-rendered at low resolution, colours reduced a little, then scaled back up with hard pixel edges."""
+of about VIDEO_TARGET_SECONDS (see length.py). Each scene slowly zooms or pans, scenes crossfade, and the picture
+gets a PS2-era finish: rendered at low resolution, colours reduced a little, then scaled back up with hard pixel edges."""
 
 from __future__ import annotations
 
@@ -10,11 +10,10 @@ from typing import Any
 
 from ..context import StageContext, StageError
 from ..ffmpeg import duration, run_ffmpeg
+from ..length import video_length
 from .audio import write_ass
 
 WIDTH, HEIGHT, FPS = 1080, 1920, 30
-TARGET_SECONDS = 10.0
-MAX_SECONDS = 12.5
 FADE = 0.5
 NARRATION_DELAY = 0.3
 # The retro look: the low resolution it's drawn at, and how many levels each colour channel keeps.
@@ -55,7 +54,8 @@ def run(ctx: StageContext) -> dict[str, Any]:
         raise StageError("The narration or captions are missing; make the audio again.", retryable=False)
 
     speech = duration(ctx.config, narration)
-    total = min(max(TARGET_SECONDS, speech + NARRATION_DELAY + 0.6), MAX_SECONDS)
+    length = video_length(ctx.config)
+    total = min(max(length.render_min, speech + NARRATION_DELAY + 0.6), length.render_max)
     count = len(images)
     clip = (total + (count - 1) * FADE) / count
     frames = int(round(clip * FPS))

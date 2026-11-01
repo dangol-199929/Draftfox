@@ -9,8 +9,8 @@ from typing import Any
 
 from ..context import StageContext, StageError
 from ..ffmpeg import probe, run_ffmpeg
+from ..length import video_length
 
-MIN_SECONDS, MAX_SECONDS = 8.0, 13.0
 MIN_BLACK_SECONDS = 0.5
 
 
@@ -28,8 +28,9 @@ def run(ctx: StageContext) -> dict[str, Any]:
     audio_stream = next((s for s in streams if s.get("codec_type") == "audio"), None)
     seconds = float(info["format"].get("duration", 0))
     checks["duration"] = round(seconds, 2)
-    if not MIN_SECONDS <= seconds <= MAX_SECONDS:
-        problems.append(f"it's {seconds:.1f} s long (expected {MIN_SECONDS:.0f}-{MAX_SECONDS:.0f} s)")
+    length = video_length(ctx.config)
+    if not length.check_min <= seconds <= length.check_max:
+        problems.append(f"it's {seconds:.1f} s long (expected {length.check_min:.0f}-{length.check_max:.0f} s)")
     if not video_stream:
         problems.append("it has no video stream")
     else:

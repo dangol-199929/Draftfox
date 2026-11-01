@@ -3,6 +3,7 @@
 // what was wrong, up to three times.
 import { generateJson } from "./ollama.ts";
 import type { VideoScript } from "./video-jobs.ts";
+import { VIDEO_LENGTH } from "./video-length.ts";
 
 // The model that writes video scripts. Separate from OLLAMA_MODEL (posts), so each can be tuned on its own.
 export const VIDEO_SCRIPT_MODEL = process.env.VIDEO_SCRIPT_MODEL?.trim() || "qwen3:4b";
@@ -10,7 +11,8 @@ export const VIDEO_SCRIPT_MODEL = process.env.VIDEO_SCRIPT_MODEL?.trim() || "qwe
 // Moods match the background music folders (data/videos/music/<mood>/).
 export const VIDEO_MOODS = ["calm", "upbeat", "inspiring", "dramatic", "playful", "mysterious"] as const;
 
-export const NARRATION_WORDS = { min: 22, max: 30 };
+export const NARRATION_WORDS = VIDEO_LENGTH.words;
+const SCENES = VIDEO_LENGTH.scenes;
 const MAX_ATTEMPTS = 3;
 
 const SCHEMA = {
@@ -21,8 +23,8 @@ const SCHEMA = {
     narration: { type: "string" },
     scenes: {
       type: "array",
-      minItems: 2,
-      maxItems: 3,
+      minItems: SCENES.min,
+      maxItems: SCENES.max,
       items: {
         type: "object",
         properties: { image_prompt: { type: "string" }, on_screen_text: { type: "string" } },
@@ -39,7 +41,9 @@ const SCHEMA = {
 
 // Shows the model how long a narration is. Small models sometimes copy it, so replies that do are refused.
 const EXAMPLE_NARRATION =
-  "Your brain sorts the whole day while you sleep. Skip it, and tomorrow's bugs get much harder to spot. Rest is part of the work.";
+  "Your brain does its most important work while you sleep. It sorts the day, keeps what matters and clears out the rest. " +
+  "Skip a night, and tomorrow's bugs get much harder to spot. Your focus slips, small mistakes pile up, and simple tasks " +
+  "take twice as long. So protect your sleep like a deadline. Rest is part of the work.";
 
 function copiesExample(narration: string): boolean {
   const words = (text: string) => text.toLowerCase().replace(/[^a-z' ]/g, " ").split(/\s+/).filter(Boolean);
@@ -49,10 +53,10 @@ function copiesExample(narration: string): boolean {
   return example.some((_, index) => index + 5 <= example.length && text.includes(example.slice(index, index + 5).join(" ")));
 }
 
-const SYSTEM = `You write scripts for 10-second vertical videos (YouTube Shorts, Reels, TikTok).
+const SYSTEM = `You write scripts for ${VIDEO_LENGTH.seconds}-second vertical videos (YouTube Shorts, Reels, TikTok).
 Rules:
-- narration: what the voice says, ${NARRATION_WORDS.min} to ${NARRATION_WORDS.max} words, about 10 seconds spoken. Plain spoken English, one clear idea, a hook in the first words. No emojis, hashtags or stage directions.
-- scenes: 2 or 3, shown in order while the narration plays.
+- narration: what the voice says, ${NARRATION_WORDS.min} to ${NARRATION_WORDS.max} words, about ${VIDEO_LENGTH.seconds} seconds spoken. Plain spoken English, one clear idea, a hook in the first words. No emojis, hashtags or stage directions.
+- scenes: ${SCENES.min} to ${SCENES.max}, shown in order while the narration plays, each following the part of the narration it shows.
   - image_prompt: one picture for an image generator, under 60 words: subject, setting, composition, lighting. Vertical framing. No text, letters, logos or real people's names in the picture.
   - on_screen_text: a short caption shown over the scene, 2 to 6 words.
 - title: under 60 characters.
@@ -61,7 +65,7 @@ Rules:
 - mood: one of ${VIDEO_MOODS.join(", ")}, for the background music.
 - style: a few words on the look, for example "retro PS2-era 3D render, low-poly, soft fog".
 - Don't invent statistics, quotes or facts you're not sure of.
-For length only, here is a narration of the right size (26 words) for a different topic, sleep. Never reuse its words:
+For length only, here is a narration of the right size (${EXAMPLE_NARRATION.split(" ").length} words) for a different topic, sleep. Never reuse its words:
 "${EXAMPLE_NARRATION}"
 The narration must be about the topic you're given.
 Reply with the JSON only.`;
@@ -93,8 +97,8 @@ export function scriptProblems(script: unknown, maxWords = NARRATION_WORDS.max, 
   } else if (words > maxWords) {
     problems.push(`narration has ${words} words; it must have ${minWords} to ${maxWords}. Remove about ${words - Math.floor((minWords + maxWords) / 2)} words.`);
   }
-  if (!Array.isArray(value.scenes) || value.scenes.length < 2 || value.scenes.length > 3) {
-    problems.push("scenes must have 2 or 3 items.");
+  if (!Array.isArray(value.scenes) || value.scenes.length < SCENES.min || value.scenes.length > SCENES.max) {
+    problems.push(`scenes must have ${SCENES.min} to ${SCENES.max} items.`);
   } else {
     value.scenes.forEach((scene, index) => {
       if (!scene?.image_prompt?.trim()) problems.push(`scene ${index + 1} has no image_prompt.`);
@@ -145,7 +149,7 @@ export async function generateVideoScript(topic: string, options: ScriptOptions 
   let feedback = "";
   let lastProblems: string[] = [];
   // A script whose only problem is a narration a few words off; used if no try gets it exactly right
-  // (the audio stage still keeps the spoken narration under 12 seconds).
+  // (the audio stage still keeps the spoken narration under VIDEO_LENGTH.maxSpokenSeconds).
   let nearMiss: { script: VideoScript; attempt: number } | null = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const prompt = `Topic: ${topic}${maxWords < NARRATION_WORDS.max ? `\nThe narration must be at most ${maxWords} words.` : ""}${feedback}`;

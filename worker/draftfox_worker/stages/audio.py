@@ -1,6 +1,6 @@
 """Audio stage: the narration spoken by Kokoro (on the CPU), word timings from faster-whisper, and captions as an
-ASS subtitle file showing 2-3 words at a time. Narration longer than MAX_SECONDS is sped up a little, then
-rewritten shorter by the script model."""
+ASS subtitle file showing 2-3 words at a time. Narration longer than the length setting allows (see length.py) is sped
+up a little, then rewritten shorter by the script model."""
 
 from __future__ import annotations
 
@@ -11,12 +11,12 @@ from pathlib import Path
 from typing import Any
 
 from ..context import StageContext, StageError
+from ..length import video_length
 from .script import write_script
 
 log = logging.getLogger("worker.audio")
 
 SAMPLE_RATE = 24000
-MAX_SECONDS = 12.0
 SPEEDS = (1.0, 1.1, 1.2)
 REWRITES = 2
 
@@ -130,6 +130,7 @@ def run(ctx: StageContext) -> dict[str, Any]:
     voice = ctx.config.get("VIDEO_VOICE", "af_heart")
     whisper_model = ctx.config.get("VIDEO_WHISPER_MODEL", "base.en")
     wav = ctx.dir / "narration.wav"
+    length = video_length(ctx.config)
 
     started = time.monotonic()
     seconds = 0.0
@@ -139,15 +140,15 @@ def run(ctx: StageContext) -> dict[str, Any]:
         for speed in SPEEDS:
             ctx.progress(0.1, f"Speaking the narration with {voice} at {speed:.1f}x")
             seconds = speak(narration, voice, speed, wav)
-            if seconds <= MAX_SECONDS:
+            if seconds <= length.max_spoken:
                 break
-        if seconds <= MAX_SECONDS:
+        if seconds <= length.max_spoken:
             break
         if rewrites >= REWRITES:
-            raise StageError(f"The narration is still {seconds:.1f} s after {REWRITES} rewrites (limit {MAX_SECONDS:.0f} s).")
+            raise StageError(f"The narration is still {seconds:.1f} s after {REWRITES} rewrites (limit {length.max_spoken:.0f} s).")
         rewrites += 1
         words = len(narration.split())
-        max_words = max(14, int(words * (MAX_SECONDS - 0.5) / seconds))
+        max_words = max(length.min_words, int(words * (length.max_spoken - 0.5) / seconds))
         log.info("Narration is %.1f s at %.1fx; asking for at most %d words", seconds, speed, max_words)
         # Only the narration is replaced; the scenes (and their images) stay.
         narration = write_script(ctx, max_words=max_words)["narration"]
