@@ -37,6 +37,18 @@ const SCHEMA = {
   required: ["title", "topic", "narration", "scenes", "post_caption", "hashtags", "mood", "style"],
 };
 
+// Shows the model how long a narration is. Small models sometimes copy it, so replies that do are refused.
+const EXAMPLE_NARRATION =
+  "Your brain sorts the whole day while you sleep. Skip it, and tomorrow's bugs get much harder to spot. Rest is part of the work.";
+
+function copiesExample(narration: string): boolean {
+  const words = (text: string) => text.toLowerCase().replace(/[^a-z' ]/g, " ").split(/\s+/).filter(Boolean);
+  const example = words(EXAMPLE_NARRATION);
+  const text = words(narration).join(" ");
+  // Any run of 5 words from the example counts as copying.
+  return example.some((_, index) => index + 5 <= example.length && text.includes(example.slice(index, index + 5).join(" ")));
+}
+
 const SYSTEM = `You write scripts for 10-second vertical videos (YouTube Shorts, Reels, TikTok).
 Rules:
 - narration: what the voice says, ${NARRATION_WORDS.min} to ${NARRATION_WORDS.max} words, about 10 seconds spoken. Plain spoken English, one clear idea, a hook in the first words. No emojis, hashtags or stage directions.
@@ -49,7 +61,9 @@ Rules:
 - mood: one of ${VIDEO_MOODS.join(", ")}, for the background music.
 - style: a few words on the look, for example "retro PS2-era 3D render, low-poly, soft fog".
 - Don't invent statistics, quotes or facts you're not sure of.
-Example narration (26 words): "Your brain sorts the whole day while you sleep. Skip it, and tomorrow's bugs get much harder to spot. Rest is part of the work."
+For length only, here is a narration of the right size (26 words) for a different topic, sleep. Never reuse its words:
+"${EXAMPLE_NARRATION}"
+The narration must be about the topic you're given.
 Reply with the JSON only.`;
 
 export type ScriptOptions = { model?: string; maxWords?: number; signal?: AbortSignal; skipGpuLease?: boolean };
@@ -58,8 +72,12 @@ export function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
+// How far outside the narration range a script may be and still be used when no try gets it right.
+const NEAR_MISS_WORDS = 4;
+
 // What's wrong with a script, as sentences the model can act on. Empty when it's fine.
-export function scriptProblems(script: unknown, maxWords = NARRATION_WORDS.max): string[] {
+// `slack` lowers the minimum narration length (the near-miss check).
+export function scriptProblems(script: unknown, maxWords = NARRATION_WORDS.max, slack = 0): string[] {
   const problems: string[] = [];
   const value = script as Partial<VideoScript> | null;
   if (!value || typeof value !== "object") return ["The reply wasn't a JSON object."];
@@ -67,8 +85,10 @@ export function scriptProblems(script: unknown, maxWords = NARRATION_WORDS.max):
   if (!text("title")) problems.push("title is missing.");
   else if (text("title").length > 80) problems.push("title is too long; keep it under 60 characters.");
   const words = wordCount(text("narration"));
-  const minWords = Math.min(NARRATION_WORDS.min, maxWords - 4);
-  if (words < minWords) {
+  const minWords = Math.min(NARRATION_WORDS.min, maxWords - 4) - slack;
+  if (copiesExample(text("narration"))) {
+    problems.push("the narration copies the example narration; write a new one about the topic.");
+  } else if (words < minWords) {
     problems.push(`narration has ${words} words; it must have ${minWords} to ${maxWords}. Add about ${Math.ceil((minWords + maxWords) / 2) - words} words.`);
   } else if (words > maxWords) {
     problems.push(`narration has ${words} words; it must have ${minWords} to ${maxWords}. Remove about ${words - Math.floor((minWords + maxWords) / 2)} words.`);
@@ -124,6 +144,9 @@ export async function generateVideoScript(topic: string, options: ScriptOptions 
   const started = Date.now();
   let feedback = "";
   let lastProblems: string[] = [];
+  // A script whose only problem is a narration a few words off; used if no try gets it exactly right
+  // (the audio stage still keeps the spoken narration under 12 seconds).
+  let nearMiss: { script: VideoScript; attempt: number } | null = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const prompt = `Topic: ${topic}${maxWords < NARRATION_WORDS.max ? `\nThe narration must be at most ${maxWords} words.` : ""}${feedback}`;
     let reply: unknown;
@@ -144,7 +167,13 @@ export async function generateVideoScript(topic: string, options: ScriptOptions 
     if (!lastProblems.length) {
       return { script: tidy(reply as VideoScript, topic), attempts: attempt, model, seconds: (Date.now() - started) / 1000 };
     }
+    if (!nearMiss && !scriptProblems(reply, maxWords + NEAR_MISS_WORDS, NEAR_MISS_WORDS).length) {
+      nearMiss = { script: reply as VideoScript, attempt };
+    }
     feedback = `\n\nYour last reply had these problems; fix them:\n- ${lastProblems.join("\n- ")}`;
+  }
+  if (nearMiss) {
+    return { script: tidy(nearMiss.script, topic), attempts: MAX_ATTEMPTS, model, seconds: (Date.now() - started) / 1000 };
   }
   throw new ScriptError(`The script still had problems after ${MAX_ATTEMPTS} tries: ${lastProblems.join(" ")}`, MAX_ATTEMPTS);
 }
