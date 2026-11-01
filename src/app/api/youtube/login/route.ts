@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
+import { redirectTo } from "@/lib/api.ts";
 import { STATE_COOKIE, authorizeUrl, getConfig } from "@/lib/youtube.ts";
 
 export const runtime = "nodejs";
@@ -7,7 +8,7 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   const config = getConfig();
   if (!config) {
-    return NextResponse.redirect(new URL("/settings?youtube_error=not_configured#youtube", request.url));
+    return redirectTo("/settings?youtube_error=not_configured#youtube");
   }
 
   // A random state ties Google's callback to this browser and blocks forged callbacks.

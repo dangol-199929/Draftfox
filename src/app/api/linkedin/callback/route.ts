@@ -1,5 +1,6 @@
 import { logEvent } from "@/lib/db.ts";
-import { NextResponse, type NextRequest } from "next/server";
+import { type NextRequest } from "next/server";
+import { redirectTo } from "@/lib/api.ts";
 import { STATE_COOKIE, connect, getConfig, type LoginMode } from "@/lib/linkedin.ts";
 
 export const runtime = "nodejs";
@@ -9,7 +10,7 @@ const SCOPE_ERRORS = ["unauthorized_scope_error", "invalid_scope"];
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const back = (query: Record<string, string>) => {
-    const response = NextResponse.redirect(new URL(`/profile?${new URLSearchParams(query)}`, request.url));
+    const response = redirectTo(`/profile?${new URLSearchParams(query)}`);
     response.cookies.delete({ name: STATE_COOKIE, path: "/api/linkedin" });
     return response;
   };

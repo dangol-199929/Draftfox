@@ -1,5 +1,6 @@
 import { logEvent } from "@/lib/db.ts";
-import { NextResponse, type NextRequest } from "next/server";
+import { type NextRequest } from "next/server";
+import { redirectTo } from "@/lib/api.ts";
 import { STATE_COOKIE, connect, getConfig } from "@/lib/youtube.ts";
 
 export const runtime = "nodejs";
@@ -7,7 +8,7 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const back = (query: Record<string, string>) => {
-    const response = NextResponse.redirect(new URL(`/settings?${new URLSearchParams(query)}#youtube`, request.url));
+    const response = redirectTo(`/settings?${new URLSearchParams(query)}#youtube`);
     response.cookies.delete({ name: STATE_COOKIE, path: "/api/youtube" });
     return response;
   };

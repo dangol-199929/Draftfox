@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
+import { redirectTo } from "@/lib/api.ts";
 import { STATE_COOKIE, authorizeUrl, getConfig, type LoginMode } from "@/lib/linkedin.ts";
 
 export const runtime = "nodejs";
@@ -8,7 +9,7 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   const config = getConfig();
   if (!config) {
-    return NextResponse.redirect(new URL("/profile?error=not_configured", request.url));
+    return redirectTo("/profile?error=not_configured");
   }
 
   const mode: LoginMode = request.nextUrl.searchParams.get("posting") === "1" ? "posting" : "basic";
