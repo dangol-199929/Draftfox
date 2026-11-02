@@ -59,8 +59,8 @@ export function TopicIdeas({ onMade }: { onMade: (job: VideoJob) => void }) {
   async function make(label: string, path: string, body?: object) {
     setBusy(label);
     try {
-      const { job } = await post<{ job: VideoJob }>(path, body);
-      toast("Added to the queue");
+      const { job, jobs } = await post<{ job: VideoJob; jobs?: VideoJob[] }>(path, body);
+      toast(jobs && jobs.length > 1 ? `Added ${jobs.length} videos to the queue; they're made one at a time` : "Added to the queue");
       onMade(job);
       await load();
     } catch (error) {
@@ -99,6 +99,16 @@ export function TopicIdeas({ onMade }: { onMade: (job: VideoJob) => void }) {
                 >
                   {busy === "next" ? <Loader2 className="animate-spin" /> : <SkipForward />}
                   Make next
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={left < 2 || busy !== ""}
+                  onClick={() => make("next3", "/api/video/topics", { action: "next", series: seriesId, count: 3 })}
+                  title="Queues the next three ideas; the worker makes them one after another"
+                >
+                  {busy === "next3" ? <Loader2 className="animate-spin" /> : <SkipForward />}
+                  Make next {Math.min(3, left)}
                 </Button>
                 <Button size="sm" variant="outline" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
                   {open ? "Hide list" : "Show all ideas"}

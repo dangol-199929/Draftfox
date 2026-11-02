@@ -93,6 +93,8 @@ export function VideoStudio() {
   const [selected, setSelected] = useState<string | null>(null);
   const [worker, setWorker] = useState<WorkerInfo | null>(null);
   const [loadError, setLoadError] = useState("");
+  // A video's settings picked with "Use as template", for the New videos form.
+  const [template, setTemplate] = useState<{ settings: VideoSettings; title: string; at: number } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -123,6 +125,7 @@ export function VideoStudio() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="grid min-w-0 gap-6">
           <AddTopics
+            template={template}
             onAdded={(added) => {
               setSelected(added[0]?.id ?? null);
               void refresh();
@@ -152,7 +155,16 @@ export function VideoStudio() {
       <div className="grid gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
         <JobList jobs={jobs} selected={selected} onSelect={setSelected} />
         {job ? (
-          <JobDetail key={job.id} job={job} onChanged={refresh} onDeleted={() => { setSelected(null); void refresh(); }} />
+          <JobDetail
+            key={job.id}
+            job={job}
+            onChanged={refresh}
+            onDeleted={() => { setSelected(null); void refresh(); }}
+            onTemplate={(settings) => {
+              setTemplate({ settings, title: job.script?.title ?? job.topic, at: Date.now() });
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+          />
         ) : (
           <Card>
             <CardContent className="grid place-items-center gap-2 py-16 text-center text-sm text-muted-foreground">
@@ -166,7 +178,13 @@ export function VideoStudio() {
   );
 }
 
-function AddTopics({ onAdded }: { onAdded: (jobs: VideoJob[]) => void }) {
+function AddTopics({
+  onAdded,
+  template,
+}: {
+  onAdded: (jobs: VideoJob[]) => void;
+  template: { settings: VideoSettings; title: string; at: number } | null;
+}) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [settings, setSettings] = useState<VideoSettings>(DEFAULT_VIDEO_SETTINGS);
@@ -184,6 +202,13 @@ function AddTopics({ onAdded }: { onAdded: (jobs: VideoJob[]) => void }) {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!template) return;
+    setSettings(template.settings);
+    setOptions(true);
+    toast(`Using the settings of "${template.title}"`);
+  }, [template]);
 
   async function saveDefaults() {
     try {
@@ -526,7 +551,17 @@ function JobList({ jobs, selected, onSelect }: { jobs: VideoJob[] | null; select
   );
 }
 
-function JobDetail({ job, onChanged, onDeleted }: { job: VideoJob; onChanged: () => Promise<void>; onDeleted: () => void }) {
+function JobDetail({
+  job,
+  onChanged,
+  onDeleted,
+  onTemplate,
+}: {
+  job: VideoJob;
+  onChanged: () => Promise<void>;
+  onDeleted: () => void;
+  onTemplate: (settings: VideoSettings) => void;
+}) {
   const [events, setEvents] = useState<VideoEvent[]>([]);
   const [publications, setPublications] = useState<VideoPublication[]>([]);
   const [busy, setBusy] = useState("");
@@ -675,6 +710,17 @@ function JobDetail({ job, onChanged, onDeleted }: { job: VideoJob; onChanged: ()
                 <Button size="sm" variant="outline" disabled={busy !== ""} onClick={() => act("cancel", { action: "cancel" }, "Cancelled")}>
                   <Ban />
                   Cancel
+                </Button>
+              )}
+              {!uploaded && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onTemplate(normalizeVideoSettings(job.assets.settings))}
+                  title="Start new videos with this one's settings (voice, length, look, captions, music)"
+                >
+                  <Copy />
+                  Use as template
                 </Button>
               )}
               <Button size="sm" variant="ghost" disabled={busy !== ""} onClick={remove} aria-label="Delete video">
@@ -1222,16 +1268,39 @@ function CaptionEditor({ job, locked, act }: { job: VideoJob; locked: boolean; a
   );
 }
 
+const STEP_LABEL: Record<string, string> = { script: "Script", visuals: "Scenes", audio: "Voice", render: "Render", qc: "Check" };
+
+// The video's history, newest last: a day heading when the day changes, the step each entry belongs to, and
+// warnings and errors in colour.
 function EventLog({ events }: { events: VideoEvent[] }) {
   if (!events.length) return <p className="text-sm text-muted-foreground">Nothing yet.</p>;
+  let lastDay = "";
   return (
-    <ol className="grid max-h-80 gap-1 overflow-y-auto rounded-lg border p-3 font-mono text-xs">
-      {events.map((event) => (
-        <li key={event.id} className={cn("flex gap-2", event.level === "error" && "text-destructive")}>
-          <span className="shrink-0 text-muted-foreground tabular-nums">{new Date(event.at).toLocaleTimeString()}</span>
-          <span>{event.message}</span>
-        </li>
-      ))}
+    <ol className="grid max-h-96 gap-1 overflow-y-auto rounded-lg border p-3 text-xs">
+      {events.map((event) => {
+        const at = new Date(event.at);
+        const day = at.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+        const heading = day !== lastDay ? day : null;
+        lastDay = day;
+        return (
+          <li key={event.id} className="grid gap-1">
+            {heading && <p className="mt-1 font-medium text-muted-foreground first:mt-0">{heading}</p>}
+            <div
+              className={cn(
+                "flex gap-2",
+                event.level === "error" && "text-destructive",
+                event.level === "warn" && "text-warning",
+              )}
+            >
+              <span className="w-16 shrink-0 text-muted-foreground tabular-nums">
+                {at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              </span>
+              {event.stage && <span className="w-14 shrink-0 text-muted-foreground">{STEP_LABEL[event.stage] ?? event.stage}</span>}
+              <span className="min-w-0 break-words">{event.message}</span>
+            </div>
+          </li>
+        );
+      })}
     </ol>
   );
 }
