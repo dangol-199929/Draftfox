@@ -44,6 +44,7 @@ import { cn } from "@/lib/utils";
 type Tone = "brand" | "success" | "warning" | "info" | "muted" | "destructive";
 
 const STATUS: Record<VideoStatus, { label: string; tone: Tone }> = {
+  UPLOADING: { label: "Uploading", tone: "info" },
   WAITING: { label: "Waiting", tone: "muted" },
   GENERATING_SCRIPT: { label: "Writing script", tone: "info" },
   GENERATING_VISUALS: { label: "Drawing scenes", tone: "info" },
@@ -103,7 +104,7 @@ export function VideoStudio() {
     }
   }, []);
 
-  const busy = jobs?.some((job) => ACTIVE.includes(job.status)) ?? false;
+  const busy = jobs?.some((job) => ACTIVE.includes(job.status) || job.status === "UPLOADING") ?? false;
   useEffect(() => {
     void refresh();
     const timer = setInterval(() => void refresh(), busy ? 3000 : 15000);
@@ -115,12 +116,20 @@ export function VideoStudio() {
   return (
     <div className="grid gap-6">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <AddTopics
-          onAdded={(added) => {
-            setSelected(added[0]?.id ?? null);
-            void refresh();
-          }}
-        />
+        <div className="grid min-w-0 gap-6">
+          <AddTopics
+            onAdded={(added) => {
+              setSelected(added[0]?.id ?? null);
+              void refresh();
+            }}
+          />
+          <UploadVideo
+            onStarted={(job) => {
+              setSelected(job.id);
+              void refresh();
+            }}
+          />
+        </div>
         <WorkerCard info={worker} />
       </div>
       <TopicIdeas
@@ -205,6 +214,126 @@ function AddTopics({ onAdded }: { onAdded: (jobs: VideoJob[]) => void }) {
           <Button size="sm" disabled={busy || !topics.length} onClick={add}>
             {busy ? <Loader2 className="animate-spin" /> : <ListPlus />}
             Add to queue
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const FITS = [
+  { value: "none", label: "Keep as is" },
+  { value: "crop", label: "Crop to 1080x1920" },
+  { value: "pad", label: "Fit with bars" },
+] as const;
+
+// A video you made yourself: sent in chunks (each written to disk as it arrives), checked, then reviewed like the rest.
+function UploadVideo({ onStarted }: { onStarted: (job: VideoJob) => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [fit, setFit] = useState<string>("none");
+  const [sent, setSent] = useState<number | null>(null);
+  const [inputKey, setInputKey] = useState(0);
+
+  async function upload() {
+    if (!file) return;
+    setSent(0);
+    try {
+      const { job, chunkBytes } = await api<{ job: VideoJob; chunkBytes: number }>("/api/video/uploads", {
+        method: "POST",
+        body: JSON.stringify({ title, name: file.name, size: file.size }),
+      });
+      onStarted(job);
+      let offset = 0;
+      let failures = 0;
+      while (offset < file.size) {
+        const response = await fetch(`/api/video/uploads/${job.id}?offset=${offset}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: file.slice(offset, offset + chunkBytes),
+        }).catch(() => null);
+        const body = (await response?.json().catch(() => ({}))) as { received?: number; error?: string } | undefined;
+        if (response?.ok && typeof body?.received === "number") {
+          offset = body.received;
+          failures = 0;
+          setSent(offset);
+          continue;
+        }
+        // A dropped connection is tried again from where the server says the file got to.
+        const resume = body?.error?.match(/starting at byte (\d+)/);
+        if (resume) offset = Number(resume[1]);
+        if (++failures > 3) throw new Error(body?.error ?? "The upload kept breaking off. Check your connection and try again.");
+        await new Promise((resolve) => setTimeout(resolve, 1000 * failures));
+      }
+      await api(`/api/video/uploads/${job.id}`, { method: "POST", body: JSON.stringify({ convert: fit }) });
+      toast(fit === "none" ? "Uploaded: checking it now" : "Uploaded: converting it now");
+      setFile(null);
+      setTitle("");
+      setInputKey((key) => key + 1);
+      onStarted(job);
+    } catch (error) {
+      toast((error as Error).message, "error");
+    } finally {
+      setSent(null);
+    }
+  }
+
+  const uploading = sent !== null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Upload className="size-4 text-muted-foreground" />
+          Upload your own video
+        </CardTitle>
+        <CardDescription>
+          An MP4 or MOV of up to 2 GB that you made. It&apos;s checked, then goes to review, approval and Upload to YouTube like the others.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-2">
+            <Label htmlFor="upload-file">Video file</Label>
+            <Input
+              key={inputKey}
+              id="upload-file"
+              type="file"
+              accept="video/mp4,video/quicktime,.mp4,.mov,.m4v"
+              disabled={uploading}
+              onChange={(event) => {
+                const picked = event.target.files?.[0] ?? null;
+                setFile(picked);
+                if (picked && !title) setTitle(picked.name.replace(/\.[^.]+$/, "").slice(0, 100));
+              }}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="upload-title">Title</Label>
+            <Input id="upload-title" maxLength={100} value={title} onChange={(event) => setTitle(event.target.value)} disabled={uploading} />
+          </div>
+        </div>
+        <div className="grid gap-2">
+          <Label>Size</Label>
+          <ToggleGroup type="single" variant="outline" aria-label="Size" value={fit} onValueChange={(value) => value && setFit(value)} disabled={uploading} className="flex-wrap justify-start">
+            {FITS.map((option) => (
+              <ToggleGroupItem key={option.value} value={option.value}>
+                {option.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          <p className="text-xs text-muted-foreground">Shorts are 1080x1920. Crop fills the frame; bars keep the whole picture.</p>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground tabular-nums">
+            {uploading && file
+              ? `Sending… ${Math.round(((sent ?? 0) / file.size) * 100)}% of ${(file.size / 1024 / 1024).toFixed(0)} MB`
+              : file
+                ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
+                : "Nothing picked yet"}
+          </p>
+          <Button size="sm" disabled={uploading || !file || file.size > 2 * 1024 * 1024 * 1024} onClick={upload}>
+            {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
+            Upload
           </Button>
         </div>
       </CardContent>
@@ -352,6 +481,8 @@ function JobDetail({ job, onChanged, onDeleted }: { job: VideoJob; onChanged: ()
   const hasVideo = Boolean(job.outputPath && job.completedStages.includes("render"));
   const youtube = publications.find((publication) => publication.platform === "youtube");
   const timings = job.assets.timings as Record<string, number> | undefined;
+  const uploaded = job.assets.source === "upload";
+  const warnings = ((job.qc?.warnings as string[] | undefined) ?? []).filter(Boolean);
 
   return (
     <Card>
@@ -368,6 +499,12 @@ function JobDetail({ job, onChanged, onDeleted }: { job: VideoJob; onChanged: ()
           <Alert variant="destructive">
             <AlertTitle>Stopped at the {job.stage} step</AlertTitle>
             <AlertDescription>{job.error}</AlertDescription>
+          </Alert>
+        )}
+        {warnings.length > 0 && (
+          <Alert>
+            <AlertTitle>Worth a look before you post it</AlertTitle>
+            <AlertDescription>{warnings.join(" ")}</AlertDescription>
           </Alert>
         )}
         {ACTIVE.includes(job.status) && (
@@ -395,7 +532,11 @@ function JobDetail({ job, onChanged, onDeleted }: { job: VideoJob; onChanged: ()
                 <video key={job.updatedAt} src={fileUrl(job, "video.mp4")} controls playsInline preload="metadata" className="size-full bg-black object-contain" />
               ) : (
                 <div className="grid size-full place-items-center p-4 text-center text-xs text-muted-foreground">
-                  {ACTIVE.includes(job.status) ? "The video appears here when it's rendered." : "No video yet."}
+                  {job.status === "UPLOADING"
+                    ? "Your video appears here once it's uploaded and checked."
+                    : ACTIVE.includes(job.status)
+                      ? "The video appears here when it's rendered."
+                      : "No video yet."}
                 </div>
               )}
             </div>
@@ -420,7 +561,7 @@ function JobDetail({ job, onChanged, onDeleted }: { job: VideoJob; onChanged: ()
                   </a>
                 </Button>
               )}
-              {["FAILED", "CANCELLED", "REJECTED"].includes(job.status) && (
+              {["FAILED", "CANCELLED", "REJECTED"].includes(job.status) && !uploaded && (
                 <Button size="sm" variant="outline" disabled={locked} onClick={() => act("retry", { action: "retry" }, "Queued again")}>
                   <RotateCcw />
                   Try again
@@ -443,7 +584,20 @@ function JobDetail({ job, onChanged, onDeleted }: { job: VideoJob; onChanged: ()
             )}
           </div>
 
-          {job.script ? (
+          {job.script && uploaded ? (
+            <Tabs defaultValue="script">
+              <TabsList>
+                <TabsTrigger value="script"><ScrollText />Details</TabsTrigger>
+                <TabsTrigger value="log">Log</TabsTrigger>
+              </TabsList>
+              <TabsContent value="script">
+                <ScriptEditor key={job.updatedAt} job={job} locked={locked || job.status === "UPLOADING"} act={act} />
+              </TabsContent>
+              <TabsContent value="log">
+                <EventLog events={events} />
+              </TabsContent>
+            </Tabs>
+          ) : job.script ? (
             <Tabs defaultValue="script">
               <TabsList>
                 <TabsTrigger value="script"><ScrollText />Script</TabsTrigger>
@@ -513,6 +667,8 @@ function YouTubeUpload({
   );
   const [tags, setTags] = useState(script.hashtags.map((tag) => tag.replace(/^#/, "")).join(", "));
   const [privacy, setPrivacy] = useState("");
+  // Generated videos use AI images and an AI voice; a video you made yourself is only marked if you say so.
+  const [madeWithAi, setMadeWithAi] = useState(job.assets.source !== "upload");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
 
@@ -542,7 +698,7 @@ function YouTubeUpload({
       const response = await fetch(`/api/video/jobs/${job.id}/youtube`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description, tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean), privacy }),
+        body: JSON.stringify({ title, description, tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean), privacy, madeWithAi }),
       });
       const body = (await response.json().catch(() => ({}))) as { error?: string; publications?: VideoPublication[] };
       if (body.publications) await onDone(body.publications);
@@ -594,9 +750,18 @@ function YouTubeUpload({
           ))}
         </ToggleGroup>
         <p className="text-xs text-muted-foreground">
-          {PRIVACY.find((option) => option.value === privacy)?.hint ?? "Pick one before uploading."} The video is marked as
-          made with AI (altered or synthetic content) and not made for kids.
+          {PRIVACY.find((option) => option.value === privacy)?.hint ?? "Pick one before uploading."} It&apos;s marked as not made
+          for kids.
         </p>
+      </div>
+      <div className="flex items-start gap-3">
+        <Switch id="yt-ai" checked={madeWithAi} onCheckedChange={setMadeWithAi} disabled={uploading} />
+        <div className="grid gap-0.5">
+          <Label htmlFor="yt-ai">Made with AI</Label>
+          <p className="text-xs text-muted-foreground">
+            Tells YouTube it has altered or synthetic content (AI pictures, motion or voice). On for generated videos.
+          </p>
+        </div>
       </div>
       {lastError && <UploadError message={lastError} needsReconnect={needsReconnect} />}
       <div className="flex flex-wrap gap-2">
@@ -648,6 +813,7 @@ function ScriptEditor({ job, locked, act }: { job: VideoJob; locked: boolean; ac
     scenes: job.scenes.map((scene) => ({ image_prompt: scene.image_prompt, on_screen_text: scene.on_screen_text })),
   };
   const narrationChanged = narration.trim() !== script.narration;
+  const uploaded = job.assets.source === "upload";
 
   async function copyCaption() {
     await navigator.clipboard.writeText(`${caption}\n\n${hashtags}`.trim());
@@ -660,7 +826,7 @@ function ScriptEditor({ job, locked, act }: { job: VideoJob; locked: boolean; ac
         <Label htmlFor="video-title">Title</Label>
         <Input id="video-title" value={title} onChange={(event) => setTitle(event.target.value)} disabled={locked} />
       </div>
-      <div className="grid gap-2">
+      <div className={cn("grid gap-2", uploaded && "hidden")}>
         <Label htmlFor="video-narration">Narration</Label>
         <Textarea id="video-narration" rows={4} value={narration} onChange={(event) => setNarration(event.target.value)} disabled={locked} />
         <p className={cn("text-xs text-muted-foreground", (words < VIDEO_LENGTH.words.min - 4 || words > VIDEO_LENGTH.words.max + 4) && "text-warning")}>
@@ -678,23 +844,27 @@ function ScriptEditor({ job, locked, act }: { job: VideoJob; locked: boolean; ac
           <Save />
           Save
         </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={locked || !job.completedStages.includes("audio")}
-          onClick={async () => {
-            await act("save", { action: "edit", script: edits });
-            await act("narration", { action: "redo", what: "narration" }, "Recording the narration again");
-          }}
-          title={narrationChanged ? "Save the new narration and record it again" : "Record the narration again"}
-        >
-          <Mic />
-          {narrationChanged ? "Save and re-record voice" : "Re-record voice"}
-        </Button>
-        <Button size="sm" variant="ghost" disabled={locked} onClick={() => act("script", { action: "redo", what: "script" }, "Starting over")}>
-          <RefreshCw />
-          New script
-        </Button>
+        {!uploaded && (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={locked || !job.completedStages.includes("audio")}
+              onClick={async () => {
+                await act("save", { action: "edit", script: edits });
+                await act("narration", { action: "redo", what: "narration" }, "Recording the narration again");
+              }}
+              title={narrationChanged ? "Save the new narration and record it again" : "Record the narration again"}
+            >
+              <Mic />
+              {narrationChanged ? "Save and re-record voice" : "Re-record voice"}
+            </Button>
+            <Button size="sm" variant="ghost" disabled={locked} onClick={() => act("script", { action: "redo", what: "script" }, "Starting over")}>
+              <RefreshCw />
+              New script
+            </Button>
+          </>
+        )}
         <Button size="sm" variant="ghost" onClick={copyCaption}>
           <Copy />
           Copy caption

@@ -30,7 +30,8 @@ function tagsWithin(input: unknown): string[] {
   return tags;
 }
 
-// Body: { title, description, tags: string[], privacy: "private" | "unlisted" | "public" }.
+// Body: { title, description, tags: string[], privacy: "private" | "unlisted" | "public", madeWithAi?: boolean }.
+// madeWithAi defaults to true for generated videos (AI images and voice) and false for your own uploads.
 // Uploads the approved video's MP4 to the connected YouTube channel, once: a finished upload is never repeated.
 export async function POST(request: Request, { params }: Params) {
   const { id } = await params;
@@ -51,6 +52,7 @@ export async function POST(request: Request, { params }: Params) {
     description: clean(body?.description, 5000),
     tags: tagsWithin(body?.tags),
     privacy: privacy as PrivacyStatus,
+    madeWithAi: typeof body?.madeWithAi === "boolean" ? body.madeWithAi : job.assets.source !== "upload",
   };
 
   let data: Uint8Array;

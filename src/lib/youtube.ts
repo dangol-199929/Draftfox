@@ -204,6 +204,8 @@ export type UploadDetails = {
   description: string;
   tags: string[];
   privacy: PrivacyStatus;
+  // Declared to YouTube as altered or synthetic media. Generated videos are; your own uploads only if you say so.
+  madeWithAi: boolean;
 };
 
 export type UploadedVideo = { id: string; url: string };
@@ -287,8 +289,7 @@ async function startUpload(size: number, details: UploadDetails): Promise<string
         status: {
           privacyStatus: details.privacy,
           selfDeclaredMadeForKids: false,
-          // The videos are made with AI images and an AI voice, so they're declared as altered or synthetic media.
-          containsSyntheticMedia: true,
+          containsSyntheticMedia: details.madeWithAi,
         },
       }),
     });

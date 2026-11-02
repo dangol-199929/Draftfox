@@ -12,6 +12,8 @@ export const VIDEO_STAGES = ["script", "visuals", "audio", "render", "qc"] as co
 export type VideoStage = (typeof VIDEO_STAGES)[number];
 
 export const VIDEO_STATUSES = [
+  // A video you made yourself, still arriving or being converted (video-uploads.ts); the worker never claims it.
+  "UPLOADING",
   "WAITING",
   "GENERATING_SCRIPT",
   "GENERATING_VISUALS",

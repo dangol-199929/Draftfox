@@ -73,8 +73,10 @@ export async function PATCH(request: Request, { params }: Params) {
     setVideoStatus(id, action === "approve" ? "APPROVED" : "REJECTED");
     syncTopicWithJob(id, action === "approve" ? "approved" : "rejected");
   } else if (action === "cancel") {
-    if (["APPROVED", "REJECTED", "CANCELLED"].includes(job.status)) return badRequest("This video is already done.", 409);
+    if (["APPROVED", "REJECTED", "CANCELLED", "UPLOADING"].includes(job.status)) return badRequest("This video is already done.", 409);
     setVideoStatus(id, "CANCELLED");
+  } else if (job.assets.source === "upload" && (action === "retry" || action === "redo")) {
+    return badRequest("This is a video you uploaded; there's nothing to make again.", 409);
   } else if (action === "retry") {
     if (!["FAILED", "CANCELLED", "REJECTED"].includes(job.status)) return badRequest("Only a failed, cancelled or rejected video can be retried.", 409);
     redoVideoStages(id, [job.stage ?? "script"], null, "Retrying");
