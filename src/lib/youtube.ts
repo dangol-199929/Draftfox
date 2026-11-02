@@ -1,7 +1,7 @@
 // Server-only: Google OAuth for YouTube, asking only for permission to upload videos.
 // Nothing is uploaded unless the user confirms it in the app.
 // Tokens stay in data/youtube.json on this machine and are never sent to the browser or logged.
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export const UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload";
@@ -210,59 +210,83 @@ export type UploadDetails = {
 
 export type UploadedVideo = { id: string; url: string };
 
-// Uploads an MP4 with YouTube's resumable protocol. Pass the session URL of an attempt that broke off to continue
-// it; onSession is called with a new session URL as soon as YouTube hands one out, so it can be saved.
+// Each request sends this much of the file, read from disk as it goes, so a 2 GB video never sits in memory.
+// YouTube wants every chunk but the last to be a multiple of 256 KiB.
+export const UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024;
+
+// Uploads an MP4 from disk with YouTube's resumable protocol, chunk by chunk. Pass the session URL of an attempt
+// that broke off to continue it; onSession is called with a new session URL as soon as YouTube hands one out, so
+// it can be saved. YouTube answers 308 with the bytes it has after each chunk but the last.
 export async function uploadVideo(
-  data: Uint8Array,
+  path: string,
   details: UploadDetails,
   session: string | null,
   onSession: (url: string | null) => void,
 ): Promise<UploadedVideo> {
-  let offset = 0;
-  if (session) {
-    const status = await queryUpload(session, data.length);
-    if (status.done) return status.done;
-    if (status.offset === null) session = null;
-    else offset = status.offset;
-  }
-  if (!session) {
-    session = await startUpload(data.length, details);
-    onSession(session);
-  }
-
-  // A dropped connection is resumed from where YouTube says the upload got to.
-  for (let attempt = 1; ; attempt++) {
-    const token = await getAccessToken();
-    let response: Response;
-    try {
-      response = await fetch(session, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "video/mp4",
-          "Content-Range": `bytes ${offset}-${data.length - 1}/${data.length}`,
-        },
-        body: new Uint8Array(data.subarray(offset)),
-      });
-    } catch {
-      if (attempt >= 3) throw new YouTubeError(502, "The upload kept breaking off. Check your internet connection and try again.");
-      const status = await queryUpload(session, data.length);
+  const file = await open(path, "r");
+  try {
+    const size = (await file.stat()).size;
+    let offset = 0;
+    if (session) {
+      const status = await queryUpload(session, size);
       if (status.done) return status.done;
-      if (status.offset === null) throw new YouTubeError(502, "YouTube forgot the interrupted upload. Try again.");
-      offset = status.offset;
-      continue;
+      if (status.offset === null) session = null;
+      else offset = status.offset;
     }
-    if (response.ok) return uploadedVideo(response);
-    if (response.status >= 500 && attempt < 3) {
-      const status = await queryUpload(session, data.length);
-      if (status.done) return status.done;
-      if (status.offset !== null) {
+    if (!session) {
+      session = await startUpload(size, details);
+      onSession(session);
+    }
+
+    const buffer = Buffer.alloc(Math.min(UPLOAD_CHUNK_BYTES, size));
+    // Failures in a row; a chunk that gets through resets it. A dropped connection is resumed from where YouTube
+    // says the upload got to.
+    let failures = 0;
+    for (;;) {
+      const end = Math.min(offset + UPLOAD_CHUNK_BYTES, size);
+      const { bytesRead } = await file.read(buffer, 0, end - offset, offset);
+      if (bytesRead !== end - offset) throw new YouTubeError(500, "The video file changed while it was uploading.");
+      const token = await getAccessToken();
+      let response: Response;
+      try {
+        response = await fetch(session, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "video/mp4",
+            "Content-Range": `bytes ${offset}-${end - 1}/${size}`,
+          },
+          body: new Uint8Array(buffer.buffer, buffer.byteOffset, bytesRead),
+        });
+      } catch {
+        if (++failures >= 3) throw new YouTubeError(502, "The upload kept breaking off. Check your internet connection and try again.");
+        const status = await queryUpload(session, size);
+        if (status.done) return status.done;
+        if (status.offset === null) throw new YouTubeError(502, "YouTube forgot the interrupted upload. Try again.");
         offset = status.offset;
         continue;
       }
+      if (response.ok) return uploadedVideo(response);
+      if (response.status === 308) {
+        const range = response.headers.get("range")?.match(/bytes=0-(\d+)/);
+        offset = range ? Number(range[1]) + 1 : 0;
+        failures = 0;
+        await response.arrayBuffer().catch(() => {});
+        continue;
+      }
+      if (response.status >= 500 && ++failures < 3) {
+        const status = await queryUpload(session, size);
+        if (status.done) return status.done;
+        if (status.offset !== null) {
+          offset = status.offset;
+          continue;
+        }
+      }
+      if (response.status === 404 || response.status === 410) onSession(null);
+      throw await uploadError(response);
     }
-    if (response.status === 404 || response.status === 410) onSession(null);
-    throw await uploadError(response);
+  } finally {
+    await file.close();
   }
 }
 

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { badRequest, readJsonObject } from "@/lib/api.ts";
 import { getVideoJob, jobDir, logVideoEvent } from "@/lib/video-jobs.ts";
@@ -55,12 +55,9 @@ export async function POST(request: Request, { params }: Params) {
     madeWithAi: typeof body?.madeWithAi === "boolean" ? body.madeWithAi : job.assets.source !== "upload",
   };
 
-  let data: Uint8Array;
-  try {
-    data = await readFile(join(jobDir(id), job.outputPath));
-  } catch {
-    return badRequest("The video file is missing. Render it again.", 404);
-  }
+  // The upload reads the file from disk chunk by chunk (youtube.ts), so only check it's there.
+  const file = join(jobDir(id), job.outputPath);
+  if (!(await stat(file).catch(() => null))?.isFile()) return badRequest("The video file is missing. Render it again.", 404);
 
   const start = startPublication(id, "youtube");
   if (!start.ok) {
@@ -71,7 +68,7 @@ export async function POST(request: Request, { params }: Params) {
 
   logVideoEvent(id, null, "info", `Uploading to YouTube (${details.privacy})`);
   try {
-    const video = await uploadVideo(data, details, start.uploadUrl, (url) => saveUploadUrl(id, "youtube", url));
+    const video = await uploadVideo(file, details, start.uploadUrl, (url) => saveUploadUrl(id, "youtube", url));
     finishPublication(id, "youtube", video.id, video.url);
     logVideoEvent(id, null, "info", `Uploaded to YouTube: ${video.url}`);
   } catch (error) {
