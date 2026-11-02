@@ -49,12 +49,15 @@ export function isVideoStage(value: unknown): value is VideoStage {
 
 // narration: what the voice says during this scene (the script's narration is these joined); older scripts don't have it.
 // motion_prompt: how the scene's LTX clip moves (the worker uses a gentle default when it's missing).
+// image_source / clip_source: "upload" when you replaced the picture or the clip with your own; the worker keeps those.
 export type VideoScene = {
   narration?: string;
   image_prompt: string;
   motion_prompt?: string;
   on_screen_text: string;
   image?: string | null;
+  image_source?: "upload" | null;
+  clip_source?: "upload" | null;
 };
 
 export type VideoScript = {
@@ -68,9 +71,9 @@ export type VideoScript = {
   style: string;
 };
 
-// What to do again on the next run, for the Video Studio's "regenerate" buttons: only these scenes' images
-// (0-based indexes).
-export type VideoRedo = { scenes?: number[] };
+// What to do again on the next run, for the Video Studio's "regenerate" buttons (0-based indexes): scenes are drawn
+// again (and animated again); clips are only animated again, from the image they have.
+export type VideoRedo = { scenes?: number[]; clips?: number[] };
 
 // One caption shown on screen (2-3 words), with its timing in seconds. The audio stage makes them from the
 // narration; you can reword them before a re-render.
@@ -375,6 +378,14 @@ export function updateVideoJob(id: string, changes: VideoJobChanges): void {
     );
 }
 
+// An approved video you change has to be approved again.
+export function unapproveIfEdited(id: string): void {
+  const result = db()
+    .prepare("UPDATE video_jobs SET status = 'AWAITING_APPROVAL', updated_at = ? WHERE id = ? AND status = 'APPROVED'")
+    .run(new Date().toISOString(), id);
+  if (Number(result.changes)) logVideoEvent(id, null, "info", "Edited, so it needs your approval again");
+}
+
 export function setVideoStatus(id: string, status: "APPROVED" | "REJECTED" | "CANCELLED"): void {
   db()
     .prepare("UPDATE video_jobs SET status = ?, worker_id = NULL, lease_until = NULL, updated_at = ? WHERE id = ?")
@@ -402,7 +413,7 @@ export function redoVideoStages(id: string, stages: VideoStage[], redo: VideoRed
   // The visuals stage keeps scene images and clips it finds (so an interrupted run resumes); when all of them are to
   // be made again (a new script, or a full redo), forget them first.
   let assets = job.assets;
-  if (again.has("visuals") && !redo?.scenes?.length) {
+  if (again.has("visuals") && !redo?.scenes?.length && !redo?.clips?.length) {
     const files = Object.fromEntries(
       Object.entries((job.assets.files as Record<string, string> | undefined) ?? {}).filter(
         ([name]) => !name.startsWith("scene-") && !name.startsWith("clip-"),

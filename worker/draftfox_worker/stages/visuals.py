@@ -113,14 +113,21 @@ def run(ctx: StageContext) -> dict[str, Any]:
     if model not in MODELS:
         raise StageError(f"VIDEO_IMAGE_MODEL must be one of {', '.join(MODELS)}.", retryable=False)
     redo = set((ctx.job.get("redo") or {}).get("scenes") or [])
+    redo_clips = set((ctx.job.get("redo") or {}).get("clips") or [])
     style = (ctx.job.get("script") or {}).get("style", "")
     motion = motion_enabled(ctx)
     assets = ctx.job.get("assets") or {}
 
     # Images and clips that already exist (from an interrupted run, or not picked for a redo) are kept; a new image
-    # always gets a new clip.
+    # always gets a new clip. A clip you uploaded for a scene is never replaced here (the app clears that first).
     images = [i for i in range(len(scenes)) if i in redo or not ctx.existing_asset(f"scene-{i + 1}")]
-    clips = [i for i in range(len(scenes)) if motion and (i in images or not ctx.existing_asset(f"clip-{i + 1}"))]
+    clips = [
+        i
+        for i in range(len(scenes))
+        if motion
+        and scenes[i].get("clip_source") != "upload"
+        and (i in images or i in redo_clips or not ctx.existing_asset(f"clip-{i + 1}"))
+    ]
     timings: dict[str, float] = dict(assets.get("image_seconds") or {})
     clip_timings: dict[str, float] = dict(assets.get("clip_seconds") or {})
     stills: list[int] = [n for n in assets.get("motion_stills") or [] if n - 1 not in clips]

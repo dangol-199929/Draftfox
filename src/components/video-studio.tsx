@@ -610,7 +610,7 @@ function JobDetail({ job, onChanged, onDeleted }: { job: VideoJob; onChanged: ()
                 <ScriptEditor key={job.updatedAt} job={job} locked={locked} act={act} />
               </TabsContent>
               <TabsContent value="scenes">
-                <SceneEditor key={job.updatedAt} job={job} locked={locked} act={act} />
+                <SceneEditor key={job.updatedAt} job={job} locked={locked} act={act} onChanged={onChanged} />
               </TabsContent>
               <TabsContent value="captions">
                 <CaptionEditor key={job.updatedAt} job={job} locked={locked} act={act} />
@@ -874,55 +874,203 @@ function ScriptEditor({ job, locked, act }: { job: VideoJob; locked: boolean; ac
   );
 }
 
-function SceneEditor({ job, locked, act }: { job: VideoJob; locked: boolean; act: Act }) {
-  const [prompts, setPrompts] = useState(() => job.scenes.map((scene) => scene.image_prompt));
-  const files = (job.assets.files ?? {}) as Record<string, string>;
+type SceneEdit = { narration: string; image_prompt: string; motion_prompt: string };
 
-  function edits() {
-    const script = job.script!;
-    return {
-      title: script.title,
-      narration: script.narration,
-      post_caption: script.post_caption,
-      hashtags: script.hashtags,
-      scenes: job.scenes.map((scene, index) => ({ image_prompt: prompts[index], on_screen_text: scene.on_screen_text })),
-    };
+// Sends a file in chunks to a PUT ?offset= endpoint (each chunk is written to disk as it arrives); returns when all is in.
+async function sendInChunks(url: string, file: File, onProgress: (sent: number) => void, chunkBytes = 8 * 1024 * 1024) {
+  let offset = 0;
+  let failures = 0;
+  while (offset < file.size || offset === 0) {
+    const response = await fetch(`${url}?offset=${offset}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file.slice(offset, offset + chunkBytes),
+    }).catch(() => null);
+    const body = (await response?.json().catch(() => ({}))) as { received?: number; error?: string } | undefined;
+    if (response?.ok && typeof body?.received === "number") {
+      offset = body.received;
+      failures = 0;
+      onProgress(offset);
+      if (offset >= file.size) return;
+      continue;
+    }
+    const resume = body?.error?.match(/starting at byte (\d+)/);
+    if (resume) offset = Number(resume[1]);
+    if (++failures > 3) throw new Error(body?.error ?? "The upload kept breaking off. Check your connection and try again.");
+    await new Promise((resolve) => setTimeout(resolve, 1000 * failures));
+  }
+}
+
+// Every scene as a card: its clip (or picture), narration, image prompt and motion prompt, all editable, with ways to
+// make the picture or clip again or put your own in. "Re-render video" makes the voice and captions again when a
+// narration changed, then the video, reusing the pictures and clips.
+function SceneEditor({ job, locked, act, onChanged }: { job: VideoJob; locked: boolean; act: Act; onChanged: () => Promise<void> }) {
+  const [edits, setEdits] = useState<SceneEdit[]>(() =>
+    job.scenes.map((scene) => ({ narration: scene.narration ?? "", image_prompt: scene.image_prompt, motion_prompt: scene.motion_prompt ?? "" })),
+  );
+  const [sending, setSending] = useState<{ scene: number; percent: number } | null>(null);
+  const files = (job.assets.files ?? {}) as Record<string, string>;
+  const stills = new Set((job.assets.motion_stills as number[] | undefined) ?? []);
+  const animated = job.assets.motion_model === "ltx";
+  const motionOff = job.assets.motion === false;
+  const visualsDone = job.completedStages.includes("visuals");
+  const changed = edits.some(
+    (edit, index) =>
+      edit.narration !== (job.scenes[index].narration ?? "") ||
+      edit.image_prompt !== job.scenes[index].image_prompt ||
+      edit.motion_prompt !== (job.scenes[index].motion_prompt ?? ""),
+  );
+  const spokenChanged = edits.some((edit, index) => edit.narration.trim() !== (job.scenes[index].narration ?? "").trim());
+  const busy = locked || sending !== null;
+
+  const set = (index: number, field: keyof SceneEdit) => (event: React.ChangeEvent<HTMLTextAreaElement>) =>
+    setEdits((current) => current.map((edit, i) => (i === index ? { ...edit, [field]: event.target.value } : edit)));
+
+  async function save() {
+    if (!changed) return;
+    await act("save", { action: "edit", script: { title: job.script!.title, scenes: edits } });
+  }
+
+  async function useOwn(index: number, file: File) {
+    if (file.size > 500 * 1024 * 1024) return toast("Use a file of up to 500 MB.", "error");
+    setSending({ scene: index, percent: 0 });
+    try {
+      await save();
+      const url = `/api/video/jobs/${job.id}/scenes/${index}`;
+      await sendInChunks(url, file, (sent) => setSending({ scene: index, percent: Math.round((sent / file.size) * 100) }));
+      await api(url, { method: "POST", body: JSON.stringify({ name: file.name }) });
+      toast(`Scene ${index + 1} uses your ${file.type.startsWith("image/") ? "picture" : "clip"} now`);
+      await onChanged();
+    } catch (error) {
+      toast((error as Error).message, "error");
+    } finally {
+      setSending(null);
+    }
   }
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {job.scenes.map((scene, index) => (
-        <div key={index} className="grid content-start gap-2">
-          <div className="aspect-[9/16] overflow-hidden rounded-lg border bg-muted">
-            {files[`scene-${index + 1}`] ? (
-              // eslint-disable-next-line @next/next/no-img-element -- generated file served by the API
-              <img src={fileUrl(job, `scene-${index + 1}.png`)} alt={`Scene ${index + 1}`} className="size-full object-cover" />
-            ) : (
-              <div className="grid size-full place-items-center text-xs text-muted-foreground">Not drawn yet</div>
-            )}
-          </div>
-          <Label htmlFor={`scene-${index}`}>Scene {index + 1}</Label>
-          <Textarea
-            id={`scene-${index}`}
-            rows={4}
-            value={prompts[index]}
-            onChange={(event) => setPrompts((current) => current.map((value, i) => (i === index ? event.target.value : value)))}
-            disabled={locked}
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={locked || !job.completedStages.includes("visuals")}
-            onClick={async () => {
-              await act("save", { action: "edit", script: edits() });
-              await act(`scene-${index}`, { action: "redo", what: "scene", scene: index }, `Drawing scene ${index + 1} again`);
-            }}
-          >
-            <RefreshCw />
-            Draw again
-          </Button>
-        </div>
-      ))}
+    <div className="grid gap-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="outline" disabled={busy || !changed} onClick={() => save().then(() => toast("Saved"))}>
+          <Save />
+          Save edits
+        </Button>
+        <Button
+          size="sm"
+          disabled={busy || !job.completedStages.includes("audio")}
+          onClick={async () => {
+            await save();
+            await act(
+              "rerender",
+              { action: "redo", what: spokenChanged ? "narration" : "render" },
+              spokenChanged ? "Recording the voice again, then rendering" : "Rendering again",
+            );
+          }}
+          title="Uses the pictures and clips you have; the voice and captions are made again if a narration changed"
+        >
+          <Film />
+          Re-render video
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          {spokenChanged ? "A narration changed: re-rendering records the voice and captions again." : "Edits are kept when you re-render."}
+        </p>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {job.scenes.map((scene, index) => {
+          const n = index + 1;
+          const clip = files[`clip-${n}`];
+          const ownClip = scene.clip_source === "upload";
+          const showClip = clip && (ownClip || (animated && !stills.has(n)));
+          return (
+            <div key={index} className="grid content-start gap-2 rounded-xl border p-3">
+              <div className="relative aspect-[9/16] overflow-hidden rounded-lg border bg-muted">
+                {showClip ? (
+                  <video
+                    key={`${clip}-${job.updatedAt}`}
+                    src={fileUrl(job, clip)}
+                    poster={files[`scene-${n}`] ? fileUrl(job, `scene-${n}.png`) : undefined}
+                    muted
+                    loop
+                    autoPlay
+                    playsInline
+                    className="size-full object-cover"
+                  />
+                ) : files[`scene-${n}`] ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- generated file served by the API
+                  <img src={fileUrl(job, `scene-${n}.png`)} alt={`Scene ${n}`} className="size-full object-cover" />
+                ) : (
+                  <div className="grid size-full place-items-center text-xs text-muted-foreground">Not drawn yet</div>
+                )}
+                <div className="absolute left-2 top-2 flex flex-wrap gap-1">
+                  <Badge variant="muted">Scene {n}</Badge>
+                  {ownClip ? <Badge variant="brand">Your clip</Badge> : scene.image_source === "upload" ? <Badge variant="brand">Your picture</Badge> : null}
+                  {!ownClip && animated && stills.has(n) && <Badge variant="warning">Still</Badge>}
+                </div>
+                {sending?.scene === index && (
+                  <div className="absolute inset-0 grid place-items-center bg-background/70 text-xs font-medium">Sending… {sending.percent}%</div>
+                )}
+              </div>
+              <Label htmlFor={`scene-${index}-narration`}>Narration</Label>
+              <Textarea id={`scene-${index}-narration`} rows={3} value={edits[index].narration} onChange={set(index, "narration")} disabled={busy} />
+              <Label htmlFor={`scene-${index}-image`}>Image prompt</Label>
+              <Textarea id={`scene-${index}-image`} rows={4} value={edits[index].image_prompt} onChange={set(index, "image_prompt")} disabled={busy || ownClip} />
+              <Label htmlFor={`scene-${index}-motion`}>Motion prompt</Label>
+              <Textarea
+                id={`scene-${index}-motion`}
+                rows={2}
+                value={edits[index].motion_prompt}
+                onChange={set(index, "motion_prompt")}
+                disabled={busy || ownClip || motionOff}
+                placeholder={motionOff ? "Motion is off for this video" : "Slow push-in, leaves moving gently in the breeze"}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || !visualsDone}
+                  onClick={async () => {
+                    await save();
+                    await act(`scene-${index}`, { action: "redo", what: "scene", scene: index }, `Drawing scene ${n} again`);
+                  }}
+                >
+                  <RefreshCw />
+                  New image
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || !visualsDone || motionOff || !files[`scene-${n}`]}
+                  onClick={async () => {
+                    await save();
+                    await act(`clip-${index}`, { action: "redo", what: "clip", scene: index }, `Animating scene ${n} again`);
+                  }}
+                  title={motionOff ? "Motion is off for this video" : "Animate this scene's picture again with the motion prompt"}
+                >
+                  <Film />
+                  New clip
+                </Button>
+                <Button size="sm" variant="ghost" disabled={busy || !visualsDone} asChild>
+                  <label className="cursor-pointer">
+                    <Upload />
+                    Use my own
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime,video/webm,.mov,.m4v"
+                      className="sr-only"
+                      disabled={busy || !visualsDone}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.target.value = "";
+                        if (file) void useOwn(index, file);
+                      }}
+                    />
+                  </label>
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 
 const TYPES: Record<string, string> = {
   mp4: "video/mp4",
+  webm: "video/webm",
   png: "image/png",
   jpg: "image/jpeg",
   wav: "audio/wav",

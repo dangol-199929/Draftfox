@@ -66,15 +66,17 @@ def run(ctx: StageContext) -> dict[str, Any]:
     mood = (ctx.job.get("script") or {}).get("mood", "calm")
     music = pick_music(ctx, mood)
 
-    # The visuals stage's LTX clips, where it made them (none when motion was off for this video).
+    # The visuals stage's LTX clips, where it made them (none when motion was off for this video), and clips you
+    # uploaded for a scene (always used).
     assets = ctx.job.get("assets") or {}
     stills = set(assets.get("motion_stills") or [])
     clips: list[Path | None] = [None] * count
-    if assets.get("motion_model") == "ltx":
-        for i in range(count):
-            name = files.get(f"clip-{i + 1}")
-            if name and i + 1 not in stills and (ctx.dir / name).is_file():
-                clips[i] = ctx.dir / name
+    for i in range(count):
+        name = files.get(f"clip-{i + 1}")
+        own = i < len(scenes) and scenes[i].get("clip_source") == "upload"
+        made = assets.get("motion_model") == "ltx" and i + 1 not in stills
+        if name and (own or made) and (ctx.dir / name).is_file():
+            clips[i] = ctx.dir / name
 
     inputs: list[str] = []
     for i, image in enumerate(images):

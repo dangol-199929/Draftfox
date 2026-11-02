@@ -9,6 +9,7 @@ import {
   listVideoEvents,
   redoVideoStages,
   setVideoStatus,
+  unapproveIfEdited,
   updateVideoJob,
   type CaptionGroup,
   type VideoJob,
@@ -30,35 +31,57 @@ export async function GET(_request: Request, { params }: Params) {
 
 const text = (value: unknown, max: number) => (typeof value === "string" ? value.trim().slice(0, max) : "");
 
-// Your edits to the script: title, narration, scene captions and image prompts, post caption, hashtags.
+// Your edits to the script: title, narration, each scene's narration, image prompt, motion prompt and caption, the
+// post caption and hashtags. A scene field that isn't sent stays as it was. When a scene's narration changes, the
+// narration the voice reads is those joined again.
 function editedScript(job: VideoJob, input: Record<string, unknown>): VideoScript | string {
   if (!job.script) return "This video has no script yet.";
   const scenes = Array.isArray(input.scenes) ? input.scenes : [];
   if (scenes.length !== job.scenes.length) return "Keep the same number of scenes.";
-  const script: VideoScript = {
+  const field = (edit: Record<string, unknown>, name: string, max: number, fallback: string) =>
+    typeof edit[name] === "string" ? text(edit[name], max) || fallback : fallback;
+  const edited = job.scenes.map((scene, index) => {
+    const edit = (scenes[index] ?? {}) as Record<string, unknown>;
+    return {
+      ...scene,
+      narration: typeof edit.narration === "string" ? text(edit.narration, 600).replace(/\s+/g, " ") : scene.narration,
+      image_prompt: field(edit, "image_prompt", 1000, scene.image_prompt),
+      motion_prompt: typeof edit.motion_prompt === "string" ? text(edit.motion_prompt, 500) : scene.motion_prompt,
+      on_screen_text: typeof edit.on_screen_text === "string" ? text(edit.on_screen_text, 100) : scene.on_screen_text,
+    };
+  });
+  const scenesSpoken = edited.some((scene, index) => (scene.narration ?? "") !== (job.scenes[index].narration ?? ""));
+  return {
     ...job.script,
     title: text(input.title, 100) || job.script.title,
-    narration: text(input.narration, 1000) || job.script.narration,
-    post_caption: text(input.post_caption, 2000),
+    narration: scenesSpoken
+      ? edited.map((scene) => scene.narration ?? "").filter(Boolean).join(" ")
+      : text(input.narration, 1000) || job.script.narration,
+    post_caption: typeof input.post_caption === "string" ? text(input.post_caption, 2000) : job.script.post_caption,
     hashtags: Array.isArray(input.hashtags)
       ? input.hashtags.map((tag) => text(tag, 60)).filter(Boolean).slice(0, 10)
       : job.script.hashtags,
-    scenes: job.scenes.map((scene, index) => {
-      const edit = (scenes[index] ?? {}) as Record<string, unknown>;
-      return {
-        ...scene,
-        image_prompt: text(edit.image_prompt, 1000) || scene.image_prompt,
-        on_screen_text: text(edit.on_screen_text, 100),
-      };
-    }),
+    scenes: edited,
   };
-  return script;
+}
+
+// A scene picked by index, or an error.
+function sceneIndex(job: VideoJob, value: unknown): number | null {
+  const scene = Number(value);
+  return Number.isInteger(scene) && scene >= 0 && scene < job.scenes.length ? scene : null;
+}
+
+// Clears a scene's "your own" flag so the worker makes that part again.
+function forgetOwn(job: VideoJob, scene: number, field: "image_source" | "clip_source") {
+  const scenes = job.scenes.map((item, index) => (index === scene ? { ...item, [field]: null } : item));
+  updateVideoJob(job.id, { scenes, script: job.script ? { ...job.script, scenes } : undefined });
 }
 
 // Body: { action } with
 // - approve | reject | cancel | retry
 // - edit: { script?: {...}, captions?: [{ text }] } saves your changes (captions keep their timings)
-// - redo: { what: "scene" (with scene: index) | "narration" | "render" | "script" } makes that part again, keeping the rest
+// - redo: { what: "scene" | "clip" (with scene: index) | "narration" | "render" | "script" } makes that part again,
+//   keeping the rest: a scene is drawn and animated again, a clip only animated again from its image
 export async function PATCH(request: Request, { params }: Params) {
   const { id } = await params;
   const job = getVideoJob(id);
@@ -99,13 +122,21 @@ export async function PATCH(request: Request, { params }: Params) {
       assets = { ...assets, caption_groups: edited };
     }
     updateVideoJob(id, { script: script ?? undefined, scenes: script?.scenes, assets });
+    unapproveIfEdited(id);
   } else if (action === "redo") {
     if (RUNNING.includes(job.status)) return badRequest("Wait for the worker to finish this step, or cancel it first.", 409);
     const what = body?.what;
-    if (what === "scene") {
-      const scene = Number(body?.scene);
-      if (!Number.isInteger(scene) || scene < 0 || scene >= job.scenes.length) return badRequest("Pick a scene.");
-      redoVideoStages(id, ["visuals"], { scenes: [scene] }, `Drawing scene ${scene + 1} again`);
+    if (what === "scene" || what === "clip") {
+      const scene = sceneIndex(job, body?.scene);
+      if (scene === null) return badRequest("Pick a scene.");
+      if (what === "scene") {
+        forgetOwn(job, scene, "image_source");
+        forgetOwn(getVideoJob(id)!, scene, "clip_source");
+        redoVideoStages(id, ["visuals"], { scenes: [scene] }, `Drawing scene ${scene + 1} again`);
+      } else {
+        forgetOwn(job, scene, "clip_source");
+        redoVideoStages(id, ["visuals"], { clips: [scene] }, `Animating scene ${scene + 1} again`);
+      }
     } else if (what === "narration") {
       redoVideoStages(id, ["audio"], null, "Speaking the narration again");
     } else if (what === "render") {
@@ -113,7 +144,7 @@ export async function PATCH(request: Request, { params }: Params) {
     } else if (what === "script") {
       redoVideoStages(id, ["script"], null, "Starting over with a new script");
     } else {
-      return badRequest(`"what" must be scene, narration, render or script.`);
+      return badRequest(`"what" must be scene, clip, narration, render or script.`);
     }
   } else {
     return badRequest("Unknown action.");
