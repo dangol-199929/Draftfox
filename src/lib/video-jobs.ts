@@ -5,6 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { join, relative, resolve, sep } from "node:path";
 import { db, readSetting, writeSetting } from "./db.ts";
+import { normalizeVideoSettings, type VideoSettings } from "./video-settings.ts";
 
 export const VIDEO_DIR = join(process.cwd(), "data", "videos");
 
@@ -14,6 +15,8 @@ export type VideoStage = (typeof VIDEO_STAGES)[number];
 export const VIDEO_STATUSES = [
   // A video you made yourself, still arriving or being converted (video-uploads.ts); the worker never claims it.
   "UPLOADING",
+  // Stopped after the script (the "Edit the script first" setting) until you click Continue.
+  "SCRIPT_READY",
   "WAITING",
   "GENERATING_SCRIPT",
   "GENERATING_VISUALS",
@@ -183,8 +186,18 @@ export function listVideoJobs(): VideoJob[] {
   return (db().prepare("SELECT * FROM video_jobs ORDER BY created_at DESC").all() as VideoJobRow[]).map(toJob);
 }
 
-// motion: false keeps this video's scenes as still images even when the worker has VIDEO_MOTION=ltx.
-export function createVideoJob(topic: string, seriesId: string | null = null, motion = true): VideoJob {
+// Your saved defaults for new videos (the Video Studio's "Save as my defaults").
+export function videoDefaults(): VideoSettings {
+  return normalizeVideoSettings(readSetting<unknown>("video_defaults"));
+}
+
+export function saveVideoDefaults(settings: VideoSettings): void {
+  writeSetting("video_defaults", settings);
+}
+
+// settings: this video's own (see video-settings.ts); your defaults when not given. motion: false (also kept as
+// assets.motion, which the worker read before settings existed) keeps the scenes as still images.
+export function createVideoJob(topic: string, seriesId: string | null = null, settings: VideoSettings = videoDefaults()): VideoJob {
   const now = new Date().toISOString();
   const id = randomUUID();
   db()
@@ -192,7 +205,7 @@ export function createVideoJob(topic: string, seriesId: string | null = null, mo
       `INSERT INTO video_jobs (id, topic, series_id, status, stage, assets, created_at, updated_at)
        VALUES (?, ?, ?, 'WAITING', 'script', ?, ?, ?)`,
     )
-    .run(id, topic, seriesId, motion ? null : JSON.stringify({ motion: false }), now, now);
+    .run(id, topic, seriesId, JSON.stringify({ settings, motion: settings.motion }), now, now);
   logVideoEvent(id, null, "info", "Added to the queue");
   return getVideoJob(id)!;
 }
@@ -346,7 +359,24 @@ export function completeStage(job: VideoJob, stage: VideoStage, result: StageRes
     );
   logVideoEvent(job.id, stage, "info", `Finished ${stage}${seconds === undefined ? "" : ` in ${seconds.toFixed(1)} s`}`);
   if (!next) finishVideoJob(job.id);
+  else if (stage === "script" && (assets.settings as VideoSettings | undefined)?.pauseAfterScript) pauseForScript(job.id);
   return getVideoJob(job.id)!;
+}
+
+// Hands the job back after its script, so you can edit the narration and prompts before anything is drawn.
+function pauseForScript(id: string) {
+  db()
+    .prepare("UPDATE video_jobs SET status = 'SCRIPT_READY', worker_id = NULL, lease_until = NULL, updated_at = ? WHERE id = ?")
+    .run(new Date().toISOString(), id);
+  logVideoEvent(id, null, "info", "Script ready: edit it, then click Continue");
+}
+
+// Continue after the script: the worker picks it up again at the next stage.
+export function continueVideoJob(id: string): void {
+  db()
+    .prepare("UPDATE video_jobs SET status = 'WAITING', updated_at = ? WHERE id = ? AND status = 'SCRIPT_READY'")
+    .run(new Date().toISOString(), id);
+  logVideoEvent(id, null, "info", "Continuing with your script");
 }
 
 // A failed stage is tried again (up to MAX_ATTEMPTS in all) unless the worker says retrying can't help.

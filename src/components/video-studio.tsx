@@ -15,9 +15,11 @@ import {
   Loader2,
   Mic,
   RefreshCw,
+  Play,
   RotateCcw,
   Save,
   ScrollText,
+  Settings2,
   Subtitles,
   Trash2,
   Upload,
@@ -34,17 +36,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { TopicIdeas } from "@/components/video-topics";
+import { VideoSettingsForm } from "@/components/video-settings-form";
 import { toast } from "@/components/ui/toaster";
 import type { GpuLease } from "@/lib/gpu-lock.ts";
 import type { CaptionGroup, VideoEvent, VideoJob, VideoStatus, WorkerStatus } from "@/lib/video-jobs.ts";
 import type { VideoPublication } from "@/lib/video-publications.ts";
 import { VIDEO_LENGTH, WORDS_PER_SECOND } from "@/lib/video-length.ts";
+import { DEFAULT_VIDEO_SETTINGS, normalizeVideoSettings, settingsRedo, type VideoSettings } from "@/lib/video-settings.ts";
 import { cn } from "@/lib/utils";
 
 type Tone = "brand" | "success" | "warning" | "info" | "muted" | "destructive";
 
 const STATUS: Record<VideoStatus, { label: string; tone: Tone }> = {
   UPLOADING: { label: "Uploading", tone: "info" },
+  SCRIPT_READY: { label: "Script ready to edit", tone: "brand" },
   WAITING: { label: "Waiting", tone: "muted" },
   GENERATING_SCRIPT: { label: "Writing script", tone: "info" },
   GENERATING_VISUALS: { label: "Drawing scenes", tone: "info" },
@@ -164,13 +169,36 @@ export function VideoStudio() {
 function AddTopics({ onAdded }: { onAdded: (jobs: VideoJob[]) => void }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [motion, setMotion] = useState(true);
+  const [settings, setSettings] = useState<VideoSettings>(DEFAULT_VIDEO_SETTINGS);
+  const [music, setMusic] = useState<Record<string, string[]>>({});
+  const [options, setOptions] = useState(false);
   const topics = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const motion = settings.motion;
+  const setMotion = (value: boolean) => setSettings((current) => ({ ...current, motion: value }));
+
+  useEffect(() => {
+    api<{ defaults: VideoSettings; music: Record<string, string[]> }>("/api/video/settings")
+      .then((body) => {
+        setSettings(body.defaults);
+        setMusic(body.music);
+      })
+      .catch(() => {});
+  }, []);
+
+  async function saveDefaults() {
+    try {
+      const body = await api<{ defaults: VideoSettings }>("/api/video/settings", { method: "PUT", body: JSON.stringify({ settings }) });
+      setSettings(body.defaults);
+      toast("Saved as your defaults (also used by Make video on the topic ideas)");
+    } catch (error) {
+      toast((error as Error).message, "error");
+    }
+  }
 
   async function add() {
     setBusy(true);
     try {
-      const { jobs } = await api<{ jobs: VideoJob[] }>("/api/video/jobs", { method: "POST", body: JSON.stringify({ topics, motion }) });
+      const { jobs } = await api<{ jobs: VideoJob[] }>("/api/video/jobs", { method: "POST", body: JSON.stringify({ topics, settings }) });
       toast(jobs.length === 1 ? "Added to the queue" : `Added ${jobs.length} videos to the queue`);
       setText("");
       onAdded(jobs);
@@ -189,7 +217,7 @@ function AddTopics({ onAdded }: { onAdded: (jobs: VideoJob[]) => void }) {
           New videos
         </CardTitle>
         <CardDescription>
-          One topic per line. Each becomes a {VIDEO_LENGTH.seconds}-second vertical video: script, scene images, voice, captions and music,
+          One topic per line. Each becomes a {settings.seconds}-second vertical video: script, scene images, voice, captions and music,
           made on this PC. Nothing is posted anywhere.
         </CardDescription>
       </CardHeader>
@@ -205,6 +233,9 @@ function AddTopics({ onAdded }: { onAdded: (jobs: VideoJob[]) => void }) {
           <p className="text-xs text-muted-foreground">
             {topics.length ? `${topics.length} topic${topics.length === 1 ? "" : "s"}` : "Up to 20 at a time"}
           </p>
+          <Button size="sm" variant="ghost" onClick={() => setOptions((open) => !open)} aria-expanded={options}>
+            {options ? "Hide options" : "Options"}
+          </Button>
           <div className="ml-auto flex items-center gap-2" title="Animate each scene with LTX-Video; off keeps still images with a slow zoom">
             <Switch id="video-motion" checked={motion} onCheckedChange={setMotion} />
             <Label htmlFor="video-motion" className="text-xs font-normal">
@@ -216,8 +247,67 @@ function AddTopics({ onAdded }: { onAdded: (jobs: VideoJob[]) => void }) {
             Add to queue
           </Button>
         </div>
+        {options && (
+          <div className="grid gap-3">
+            <VideoSettingsForm value={settings} onChange={setSettings} music={music} onMusicChange={setMusic} idPrefix="new" />
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={saveDefaults}>
+                <Save />
+                Save as my defaults
+              </Button>
+              <p className="self-center text-xs text-muted-foreground">These settings apply to the videos you add here.</p>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+// A video's own settings, changed after it was added. "Save and apply" makes again only what the change needs.
+function JobSettings({ job, locked, onChanged }: { job: VideoJob; locked: boolean; onChanged: () => Promise<void> }) {
+  const saved = useMemo(() => normalizeVideoSettings(job.assets.settings), [job.assets.settings]);
+  const [settings, setSettings] = useState(saved);
+  const [busy, setBusy] = useState(false);
+  const redo = settingsRedo(saved, settings);
+  const changed = JSON.stringify(saved) !== JSON.stringify(settings);
+  const effect = {
+    script: "Length, scenes and tone apply to a new script (Script › New script).",
+    clips: "The scenes are animated again (or made still), then the voice and video.",
+    audio: "The voice and captions are recorded again, then the video.",
+    render: "The video is rendered again.",
+  };
+
+  async function save(apply: boolean) {
+    setBusy(true);
+    try {
+      await api(`/api/video/jobs/${job.id}`, { method: "PATCH", body: JSON.stringify({ action: "settings", settings, apply }) });
+      toast(apply && redo && redo !== "script" ? "Saved: making the changes now" : "Saved");
+      await onChanged();
+    } catch (error) {
+      toast((error as Error).message, "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-3">
+      <VideoSettingsForm value={settings} onChange={setSettings} disabled={locked || busy} idPrefix={`job-${job.id}`} />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" disabled={locked || busy || !redo || redo === "script"} onClick={() => save(true)}>
+          {busy ? <Loader2 className="animate-spin" /> : <Film />}
+          Save and apply
+        </Button>
+        <Button size="sm" variant="outline" disabled={locked || busy || !changed} onClick={() => save(false)}>
+          <Save />
+          Save only
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          {redo ? effect[redo] : changed ? "Applies to new pictures (Scenes › New image) and the next script." : "No changes yet."}
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -501,6 +591,14 @@ function JobDetail({ job, onChanged, onDeleted }: { job: VideoJob; onChanged: ()
             <AlertDescription>{job.error}</AlertDescription>
           </Alert>
         )}
+        {job.status === "SCRIPT_READY" && (
+          <Alert>
+            <AlertTitle>The script is ready for you</AlertTitle>
+            <AlertDescription>
+              Edit the narration and prompts in the Script and Scenes tabs, then click Continue to draw, animate and render it.
+            </AlertDescription>
+          </Alert>
+        )}
         {warnings.length > 0 && (
           <Alert>
             <AlertTitle>Worth a look before you post it</AlertTitle>
@@ -541,6 +639,12 @@ function JobDetail({ job, onChanged, onDeleted }: { job: VideoJob; onChanged: ()
               )}
             </div>
             <div className="flex flex-wrap gap-2">
+              {job.status === "SCRIPT_READY" && (
+                <Button size="sm" disabled={locked} onClick={() => act("continue", { action: "continue" }, "Continuing: drawing the scenes")}>
+                  <Play />
+                  Continue
+                </Button>
+              )}
               {job.status === "AWAITING_APPROVAL" && (
                 <>
                   <Button size="sm" disabled={locked} onClick={() => act("approve", { action: "approve" }, "Approved")}>
@@ -603,6 +707,7 @@ function JobDetail({ job, onChanged, onDeleted }: { job: VideoJob; onChanged: ()
                 <TabsTrigger value="script"><ScrollText />Script</TabsTrigger>
                 <TabsTrigger value="scenes"><ImageIcon />Scenes</TabsTrigger>
                 <TabsTrigger value="captions"><Subtitles />Captions</TabsTrigger>
+                <TabsTrigger value="settings"><Settings2 />Settings</TabsTrigger>
                 <TabsTrigger value="log">Log</TabsTrigger>
               </TabsList>
               {/* Keyed on updatedAt so they reload when the worker changes the job (they're locked while it runs). */}
@@ -614,6 +719,9 @@ function JobDetail({ job, onChanged, onDeleted }: { job: VideoJob; onChanged: ()
               </TabsContent>
               <TabsContent value="captions">
                 <CaptionEditor key={job.updatedAt} job={job} locked={locked} act={act} />
+              </TabsContent>
+              <TabsContent value="settings">
+                <JobSettings key={job.updatedAt} job={job} locked={locked} onChanged={onChanged} />
               </TabsContent>
               <TabsContent value="log">
                 <EventLog events={events} />

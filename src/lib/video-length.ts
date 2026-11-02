@@ -18,16 +18,20 @@ function targetSeconds(): number {
   return Number.isFinite(value) && value >= 8 && value <= 90 ? value : DEFAULT_SECONDS;
 }
 
-export function videoLength(seconds = targetSeconds()) {
+// A video's own length and voice speed (from its settings) can differ from .env's; sceneCount fixes the number of scenes.
+export function videoLength(seconds = targetSeconds(), speed?: number, sceneCount?: number | null) {
+  const wordsPerSecond = speed ? 3.0 * speed : WORDS_PER_SECOND;
   // The narration fills the video except for a short lead-in and tail.
   const spoken = seconds - 1.5;
   const words = {
-    min: Math.round(spoken * WORDS_PER_SECOND * 0.88),
-    target: Math.round(spoken * WORDS_PER_SECOND),
-    max: Math.round(spoken * WORDS_PER_SECOND * 1.12),
+    min: Math.round(spoken * wordsPerSecond * 0.88),
+    target: Math.round(spoken * wordsPerSecond),
+    max: Math.round(spoken * wordsPerSecond * 1.12),
   };
   // One scene for every 4-6 seconds: 8-12 scenes for 50 s.
-  const scenes = { min: Math.max(2, Math.round(seconds / 6)), max: Math.max(3, Math.floor(seconds / 4)) };
+  const scenes = sceneCount
+    ? { min: sceneCount, max: sceneCount }
+    : { min: Math.max(2, Math.round(seconds / 6)), max: Math.max(3, Math.floor(seconds / 4)) };
   // Each scene's narration, so the model builds the length up scene by scene instead of counting the whole.
   const middleScenes = Math.round((scenes.min + scenes.max) / 2);
   const perScene = Math.round(words.target / middleScenes);

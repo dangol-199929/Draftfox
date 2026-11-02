@@ -4,7 +4,7 @@
 // lengthens its shortest scenes. Other problems are sent back with the script, up to three times.
 import { generateJson } from "./ollama.ts";
 import type { VideoScene, VideoScript } from "./video-jobs.ts";
-import { VIDEO_LENGTH } from "./video-length.ts";
+import { VIDEO_LENGTH, videoLength } from "./video-length.ts";
 import { findSeries } from "./video-series.ts";
 
 // The model that writes video scripts. Separate from OLLAMA_MODEL (posts), so each can be tuned on its own.
@@ -14,22 +14,23 @@ export const VIDEO_SCRIPT_MODEL = process.env.VIDEO_SCRIPT_MODEL?.trim() || "qwe
 export const VIDEO_MOODS = ["calm", "upbeat", "inspiring", "dramatic", "playful", "mysterious"] as const;
 
 export const NARRATION_WORDS = VIDEO_LENGTH.words;
-const SCENES = VIDEO_LENGTH.scenes;
 const MAX_ATTEMPTS = 3;
 // Repair passes per try for a narration that came out short.
 const EXPAND_PASSES = 2;
 // A script that's at most this much too short is still used when no try gets the length right.
 const NEAR_MISS_SHORT = 0.1;
 
-const SCHEMA = {
+type Length = ReturnType<typeof videoLength>;
+
+const schemaFor = (length: Length) => ({
   type: "object",
   properties: {
     title: { type: "string" },
     topic: { type: "string" },
     scenes: {
       type: "array",
-      minItems: SCENES.min,
-      maxItems: SCENES.max,
+      minItems: length.scenes.min,
+      maxItems: length.scenes.max,
       items: {
         type: "object",
         properties: {
@@ -47,19 +48,20 @@ const SCHEMA = {
     style: { type: "string" },
   },
   required: ["title", "topic", "scenes", "post_caption", "hashtags", "mood", "style"],
-};
+});
 
 type SceneWords = { min: number; target: number; max: number };
 
 // The per-scene length for a narration of at most maxWords (shorter than usual when the spoken one ran long).
-function sceneWordsFor(maxWords: number): SceneWords {
-  if (maxWords >= NARRATION_WORDS.max) return VIDEO_LENGTH.sceneWords;
-  const target = Math.max(5, Math.floor((maxWords * 0.9) / Math.round((SCENES.min + SCENES.max) / 2)));
+function sceneWordsFor(maxWords: number, length: Length): SceneWords {
+  if (maxWords >= length.words.max) return length.sceneWords;
+  const target = Math.max(5, Math.floor((maxWords * 0.9) / Math.round((length.scenes.min + length.scenes.max) / 2)));
   return { min: Math.max(4, target - 3), target, max: target + 2 };
 }
 
-function systemPrompt(sceneWords: SceneWords, minWords: number, maxWords: number): string {
-  return `You write scripts for ${VIDEO_LENGTH.seconds}-second vertical videos (YouTube Shorts, Reels, TikTok).
+function systemPrompt(length: Length, sceneWords: SceneWords, minWords: number, maxWords: number, tone: string): string {
+  const SCENES = length.scenes;
+  return `You write scripts for ${length.seconds}-second vertical videos (YouTube Shorts, Reels, TikTok).
 Rules:
 - scenes: ${SCENES.min} to ${SCENES.max}, in order. Read one after another, their narrations are the whole voice-over (${minWords} to ${maxWords} words in total).
   - narration: what the voice says during this scene: one or two full sentences, ${sceneWords.min} to ${sceneWords.max} words (aim for ${sceneWords.target}). Plain spoken English. The first scene is the hook. Each scene adds something new; don't repeat a point. No emojis, hashtags or stage directions.
@@ -72,7 +74,7 @@ Rules:
 - mood: one of ${VIDEO_MOODS.join(", ")}, for the background music.
 - style: a few words on the look, for example "retro PS2-era 3D render, low-poly, soft fog".
 - Don't invent statistics, quotes or facts you're not sure of.
-The script must be about the topic you're given.
+${tone ? `- Tone: ${tone}.\n` : ""}The script must be about the topic you're given.
 Reply with the JSON only.`;
 }
 
@@ -83,6 +85,11 @@ export type ScriptOptions = {
   skipGpuLease?: boolean;
   // Adds that series' rules (see video-series.ts) to the instructions.
   seriesId?: string | null;
+  // This video's own settings (video-settings.ts): its length, voice speed, number of scenes and tone.
+  seconds?: number;
+  voiceSpeed?: number;
+  scenes?: number | null;
+  tone?: string;
 };
 
 export function wordCount(text: string): number {
@@ -97,7 +104,13 @@ function narrationOf(draft: Draft): string {
 
 // What's wrong with a script, as sentences the model can act on. Empty when it's fine.
 // `minWords` can be lowered for the near-miss check.
-export function scriptProblems(script: unknown, maxWords = NARRATION_WORDS.max, minWords = Math.min(NARRATION_WORDS.min, maxWords - 4)): string[] {
+export function scriptProblems(
+  script: unknown,
+  maxWords = NARRATION_WORDS.max,
+  minWords = Math.min(NARRATION_WORDS.min, maxWords - 4),
+  length: Length = VIDEO_LENGTH,
+): string[] {
+  const SCENES = length.scenes;
   const problems: string[] = [];
   const value = script as Draft | null;
   if (!value || typeof value !== "object") return ["The reply wasn't a JSON object."];
@@ -167,12 +180,14 @@ export class ScriptError extends Error {
 
 export async function generateVideoScript(topic: string, options: ScriptOptions = {}): Promise<ScriptResult> {
   const model = options.model ?? VIDEO_SCRIPT_MODEL;
-  const maxWords = options.maxWords ?? NARRATION_WORDS.max;
-  const minWords = Math.min(NARRATION_WORDS.min, maxWords - 4);
-  const sceneWords = sceneWordsFor(maxWords);
+  const length = options.seconds || options.voiceSpeed || options.scenes ? videoLength(options.seconds, options.voiceSpeed, options.scenes) : VIDEO_LENGTH;
+  const maxWords = Math.min(options.maxWords ?? length.words.max, length.words.max);
+  const minWords = Math.min(length.words.min, maxWords - 4);
+  const sceneWords = sceneWordsFor(maxWords, length);
   const started = Date.now();
   const series = findSeries(options.seriesId);
-  const base = systemPrompt(sceneWords, minWords, maxWords);
+  const base = systemPrompt(length, sceneWords, minWords, maxWords, options.tone?.trim() ?? "");
+  const SCHEMA = schemaFor(length);
   const system = series ? `${base}\n\n${series.scriptRules}` : base;
   const ask = <T>(prompt: string, schema: object) =>
     generateJson<T>(prompt, system, schema, { model, temperature: 0.7, signal: options.signal, skipGpuLease: options.skipGpuLease });
@@ -199,11 +214,11 @@ export async function generateVideoScript(topic: string, options: ScriptOptions 
     for (let pass = 0; pass < EXPAND_PASSES && Array.isArray(draft.scenes) && wordCount(narrationOf(draft)) < minWords; pass++) {
       if (!(await expandScenes(draft, topic, sceneWords, ask, options.signal))) break;
     }
-    lastProblems = scriptProblems(draft, maxWords, minWords);
+    lastProblems = scriptProblems(draft, maxWords, minWords, length);
     const quoted = series?.noQuotes === true && /["“”]/.test(narrationOf(draft));
     if (quoted) lastProblems.push("a narration has quotation marks; paraphrase instead of quoting (no direct quotes).");
     if (!lastProblems.length) return done(draft, attempt);
-    if (!nearMiss && !quoted && !scriptProblems(draft, maxWords, Math.floor(minWords * (1 - NEAR_MISS_SHORT))).length) {
+    if (!nearMiss && !quoted && !scriptProblems(draft, maxWords, Math.floor(minWords * (1 - NEAR_MISS_SHORT)), length).length) {
       nearMiss = draft;
     }
     feedback = `\n\nYour last reply had these problems; fix them:\n- ${lastProblems.join("\n- ")}`;

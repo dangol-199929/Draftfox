@@ -1,9 +1,10 @@
-"""How long the videos are, from VIDEO_TARGET_SECONDS (default 50), the same setting Draftfox uses to write the
-scripts (src/lib/video-length.ts; keep the two in step)."""
+"""How long the videos are, from the video's own settings (assets.settings.seconds) or VIDEO_TARGET_SECONDS (default
+50), the same values Draftfox uses to write the scripts (src/lib/video-length.ts; keep the two in step)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from .config import Config
 
@@ -25,10 +26,11 @@ class VideoLength:
     min_words: int
 
 
-def video_length(config: Config) -> VideoLength:
+def video_length(config: Config, job: dict[str, Any] | None = None) -> VideoLength:
+    own = ((((job or {}).get("assets") or {}).get("settings")) or {}).get("seconds")
     try:
-        seconds = float(config.get("VIDEO_TARGET_SECONDS", str(DEFAULT_SECONDS)))
-    except ValueError:
+        seconds = float(own or config.get("VIDEO_TARGET_SECONDS", str(DEFAULT_SECONDS)))
+    except (TypeError, ValueError):
         seconds = DEFAULT_SECONDS
     if not 8 <= seconds <= 90:
         seconds = DEFAULT_SECONDS

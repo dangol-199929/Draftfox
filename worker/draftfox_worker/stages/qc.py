@@ -28,7 +28,7 @@ def run(ctx: StageContext) -> dict[str, Any]:
     audio_stream = next((s for s in streams if s.get("codec_type") == "audio"), None)
     seconds = float(info["format"].get("duration", 0))
     checks["duration"] = round(seconds, 2)
-    length = video_length(ctx.config)
+    length = video_length(ctx.config, ctx.job)
     if not length.check_min <= seconds <= length.check_max:
         problems.append(f"it's {seconds:.1f} s long (expected {length.check_min:.0f}-{length.check_max:.0f} s)")
     if not video_stream:

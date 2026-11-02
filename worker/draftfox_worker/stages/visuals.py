@@ -20,6 +20,7 @@ from typing import Any
 from ..comfy import Comfy, load_workflow, new_seed
 from ..context import StageContext, StageError
 from ..gpu import gpu_lease
+from ..settings import job_settings, voice_speed
 
 WIDTH, HEIGHT = 768, 1344
 CLIP_WIDTH, CLIP_HEIGHT, CLIP_FPS = 480, 832, 24
@@ -52,28 +53,32 @@ MODELS = {
 }
 
 
-def scene_prompt(scene: dict[str, Any], style: str) -> str:
-    return f"{scene['image_prompt'].strip().rstrip('.')}. {STYLE}. {style}".strip()
+SUBTLE = "Very subtle, minimal movement; the camera barely moves."
 
 
-def motion_prompt(scene: dict[str, Any]) -> str:
+def scene_prompt(scene: dict[str, Any], style: str, extra: str = "") -> str:
+    """extra: the video's own image style setting, added after the script's style."""
+    parts = [scene["image_prompt"].strip().rstrip("."), STYLE, style.strip().rstrip("."), extra.strip().rstrip(".")]
+    return ". ".join(part for part in parts if part)
+
+
+def motion_prompt(scene: dict[str, Any], strength: str = "normal") -> str:
     """What's in the picture, then how it moves (older scripts have no motion_prompt)."""
     move = (scene.get("motion_prompt") or "").strip() or DEFAULT_MOTION
-    return f"{scene['image_prompt'].strip().rstrip('.')}. {move}"
+    prompt = f"{scene['image_prompt'].strip().rstrip('.')}. {move}"
+    return f"{prompt.rstrip('.')}. {SUBTLE}" if strength == "subtle" else prompt
 
 
 def motion_enabled(ctx: StageContext) -> bool:
-    if (ctx.job.get("assets") or {}).get("motion") is False:
+    own = job_settings(ctx).get("motion")
+    if own is False or (ctx.job.get("assets") or {}).get("motion") is False:
         return False
     return ctx.config.get("VIDEO_MOTION", "ltx").lower() != "off"
 
 
 def clip_frames(ctx: StageContext, scene: dict[str, Any]) -> int:
     """About as long as the scene's narration, within what LTX makes well; the render stage stretches or holds the rest."""
-    try:
-        speed = float(ctx.config.get("VIDEO_VOICE_SPEED", "0.9"))
-    except ValueError:
-        speed = 0.9
+    speed = voice_speed(ctx)
     words = len((scene.get("narration") or "").split())
     seconds = words / (3.0 * speed) if words else CLIP_FRAMES[1] / CLIP_FPS
     frames = round(seconds * CLIP_FPS / 8) * 8 + 1
@@ -87,7 +92,7 @@ def make_clip(ctx: StageContext, comfy: Comfy, scene: dict[str, Any], index: int
     values = {
         "checkpoint": ctx.config.get("VIDEO_LTX_CHECKPOINT", "ltxv-2b-0.9.8-distilled-fp8.safetensors"),
         "text_encoder": ctx.config.get("VIDEO_LTX_TEXT_ENCODER", "t5xxl_fp8_e4m3fn_scaled.safetensors"),
-        "prompt": motion_prompt(scene),
+        "prompt": motion_prompt(scene, str(job_settings(ctx).get("motionStrength") or "normal")),
         "negative": MOTION_NEGATIVE,
         "image": image,
         "width": CLIP_WIDTH,
@@ -143,7 +148,7 @@ def run(ctx: StageContext) -> dict[str, Any]:
                 if index in images:
                     ctx.progress(done / len(todo), f"Drawing {label} with {model}")
                     values = {
-                        "prompt": scene_prompt(scenes[index], style),
+                        "prompt": scene_prompt(scenes[index], style, str(job_settings(ctx).get("imageStyle") or "")),
                         "negative": NEGATIVE,
                         "width": WIDTH,
                         "height": HEIGHT,

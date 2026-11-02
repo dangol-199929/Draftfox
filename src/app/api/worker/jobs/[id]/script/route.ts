@@ -1,7 +1,8 @@
 import { badRequest } from "@/lib/api.ts";
 import { currentGpuLease } from "@/lib/gpu-lock.ts";
 import { heldJob } from "@/lib/video-jobs.ts";
-import { NARRATION_WORDS, generateVideoScript } from "@/lib/video-script.ts";
+import { generateVideoScript } from "@/lib/video-script.ts";
+import { normalizeVideoSettings } from "@/lib/video-settings.ts";
 import { readWorkerBody, workerAuthError } from "@/lib/worker-auth.ts";
 
 export const runtime = "nodejs";
@@ -20,13 +21,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (currentGpuLease()?.holder !== `worker:${input.workerId}`) return badRequest("Take the GPU lease first.", 409);
 
   const requested = Number(input.body.maxWords);
-  const maxWords = Number.isFinite(requested) && requested >= 12 ? Math.min(requested, NARRATION_WORDS.max) : NARRATION_WORDS.max;
+  const maxWords = Number.isFinite(requested) && requested >= 12 ? requested : undefined;
+  // Older videos have no settings; .env's length and speed apply to them.
+  const settings = held.job.assets.settings ? normalizeVideoSettings(held.job.assets.settings) : null;
   try {
     const result = await generateVideoScript(held.job.topic, {
       maxWords,
       skipGpuLease: true,
       signal: request.signal,
       seriesId: held.job.seriesId,
+      seconds: settings?.seconds,
+      voiceSpeed: settings?.voiceSpeed,
+      scenes: settings?.scenes,
+      tone: settings?.scriptTone,
     });
     return Response.json(result);
   } catch (error) {

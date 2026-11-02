@@ -46,5 +46,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const job = completeStage(held.job, stage, stageResult, typeof seconds === "number" ? seconds : undefined);
-  return Response.json({ job, stage: job.status === "AWAITING_APPROVAL" ? null : nextStage(job.completedStages) });
+  // No next stage either when the job waits for you to edit its script.
+  const done = job.status === "AWAITING_APPROVAL" || job.status === "SCRIPT_READY";
+  return Response.json({ job, stage: done ? null : nextStage(job.completedStages) });
 }

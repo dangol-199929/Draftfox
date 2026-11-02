@@ -2,7 +2,9 @@ import { rm } from "node:fs/promises";
 import { badRequest, readJsonObject } from "@/lib/api.ts";
 import { listPublications } from "@/lib/video-publications.ts";
 import { syncTopicWithJob } from "@/lib/video-topics.ts";
+import { normalizeVideoSettings, settingsRedo } from "@/lib/video-settings.ts";
 import {
+  continueVideoJob,
   deleteVideoJob,
   getVideoJob,
   jobDir,
@@ -79,6 +81,8 @@ function forgetOwn(job: VideoJob, scene: number, field: "image_source" | "clip_s
 
 // Body: { action } with
 // - approve | reject | cancel | retry
+// - continue: goes on after the script, for a video set to stop there
+// - settings: { settings, apply? } saves this video's settings; apply: true also makes again what they change
 // - edit: { script?: {...}, captions?: [{ text }] } saves your changes (captions keep their timings)
 // - redo: { what: "scene" | "clip" (with scene: index) | "narration" | "render" | "script" } makes that part again,
 //   keeping the rest: a scene is drawn and animated again, a clip only animated again from its image
@@ -98,7 +102,7 @@ export async function PATCH(request: Request, { params }: Params) {
   } else if (action === "cancel") {
     if (["APPROVED", "REJECTED", "CANCELLED", "UPLOADING"].includes(job.status)) return badRequest("This video is already done.", 409);
     setVideoStatus(id, "CANCELLED");
-  } else if (job.assets.source === "upload" && (action === "retry" || action === "redo")) {
+  } else if (job.assets.source === "upload" && (action === "retry" || action === "redo" || action === "settings")) {
     return badRequest("This is a video you uploaded; there's nothing to make again.", 409);
   } else if (action === "retry") {
     if (!["FAILED", "CANCELLED", "REJECTED"].includes(job.status)) return badRequest("Only a failed, cancelled or rejected video can be retried.", 409);
@@ -123,6 +127,27 @@ export async function PATCH(request: Request, { params }: Params) {
     }
     updateVideoJob(id, { script: script ?? undefined, scenes: script?.scenes, assets });
     unapproveIfEdited(id);
+  } else if (action === "continue") {
+    if (job.status !== "SCRIPT_READY") return badRequest("This video isn't waiting for you.", 409);
+    continueVideoJob(id);
+  } else if (action === "settings") {
+    if (RUNNING.includes(job.status)) return badRequest("Wait for the worker to finish this step, or cancel it first.", 409);
+    const before = normalizeVideoSettings(job.assets.settings);
+    const after = normalizeVideoSettings(body?.settings, before);
+    updateVideoJob(id, { assets: { ...job.assets, settings: after, motion: after.motion } });
+    // apply: true makes again what the change needs, earliest first (a new script is left to you: it replaces your edits).
+    const redo = body?.apply === true ? settingsRedo(before, after) : null;
+    const done = (stage: "visuals" | "audio" | "render") => job.completedStages.includes(stage);
+    if (redo === "clips" && done("visuals")) {
+      redoVideoStages(id, ["visuals"], { clips: job.scenes.map((_, index) => index) }, after.motion ? "Animating the scenes again" : "Using still scenes");
+    } else if ((redo === "clips" || redo === "audio") && done("audio")) {
+      redoVideoStages(id, ["audio"], null, "Recording the voice again with the new settings");
+    } else if (redo && redo !== "script" && done("render")) {
+      redoVideoStages(id, ["render"], null, "Rendering again with the new settings");
+    } else {
+      unapproveIfEdited(id);
+    }
+    return Response.json({ job: getVideoJob(id), redo });
   } else if (action === "redo") {
     if (RUNNING.includes(job.status)) return badRequest("Wait for the worker to finish this step, or cancel it first.", 409);
     const what = body?.what;

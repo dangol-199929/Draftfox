@@ -13,14 +13,16 @@ from typing import Any
 from ..context import StageContext, StageError
 from ..ffmpeg import duration, run_ffmpeg
 from ..length import video_length
+from ..settings import caption_style, job_settings
 from .audio import write_ass
 
 WIDTH, HEIGHT, FPS = 1080, 1920, 30
 FADE = 0.5
 NARRATION_DELAY = 0.3
-# The retro look: the low resolution it's drawn at, and how many levels each colour channel keeps.
-RETRO_WIDTH, RETRO_HEIGHT = 360, 640
-COLOUR_STEP = 8  # 256 / 8 = 32 levels per channel
+# The retro look per strength (the video's "retro" setting): the low resolution it's drawn at, and the step between
+# the levels each colour channel keeps (8: 256 / 8 = 32 levels). "off" leaves the picture as it is.
+RETRO = {"light": (540, 960, 4), "normal": (360, 640, 8), "strong": (270, 480, 16)}
+MUSIC_VOLUME = 12  # percent
 # A clip shorter than its scene plays at most this much slower; after that its last frame is held.
 MAX_STRETCH = 1.3
 MUSIC_TYPES = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
@@ -53,18 +55,25 @@ def run(ctx: StageContext) -> dict[str, Any]:
     groups = (ctx.job.get("assets") or {}).get("caption_groups")
     if groups:
         # Rewritten each render, so captions edited in the Video Studio are used.
-        write_ass(groups, captions)
+        write_ass(groups, captions, caption_style(ctx))
     if not narration.is_file() or not captions.is_file():
         raise StageError("The narration or captions are missing; make the audio again.", retryable=False)
 
     speech = duration(ctx.config, narration)
-    length = video_length(ctx.config)
+    length = video_length(ctx.config, ctx.job)
     total = min(max(length.render_min, speech + NARRATION_DELAY + 0.6), length.render_max)
     count = len(images)
     clip = (total + (count - 1) * FADE) / count
     frames = int(round(clip * FPS))
-    mood = (ctx.job.get("script") or {}).get("mood", "calm")
-    music = pick_music(ctx, mood)
+    settings = job_settings(ctx)
+    # "auto" (or no setting) is the mood the script picked; "none" leaves the music out.
+    choice = settings.get("music") or "auto"
+    mood = (ctx.job.get("script") or {}).get("mood", "calm") if choice == "auto" else choice
+    music = None if choice == "none" else pick_music(ctx, mood)
+    try:
+        volume = float(settings.get("musicVolume", MUSIC_VOLUME)) / 100
+    except (TypeError, ValueError):
+        volume = MUSIC_VOLUME / 100
 
     # The visuals stage's LTX clips, where it made them (none when motion was off for this video), and clips you
     # uploaded for a scene (always used).
@@ -107,17 +116,25 @@ def run(ctx: StageContext) -> dict[str, Any]:
         offset = i * (clip - FADE)
         parts.append(f"[{last}][v{i}]xfade=transition=fade:duration={FADE}:offset={offset:.3f}[x{i}]")
         last = f"x{i}"
-    levels = f"floor(val/{COLOUR_STEP})*{COLOUR_STEP}"
-    parts.append(
-        f"[{last}]scale={RETRO_WIDTH}:{RETRO_HEIGHT}:flags=area,lutrgb=r='{levels}':g='{levels}':b='{levels}',"
-        f"scale={WIDTH}:{HEIGHT}:flags=neighbor,subtitles={captions.name},format=yuv420p[video]"
-    )
+    finish = []
+    retro = RETRO.get(str(settings.get("retro") or "normal"))
+    if retro:
+        retro_width, retro_height, step = retro
+        levels = f"floor(val/{step})*{step}"
+        finish.append(
+            f"scale={retro_width}:{retro_height}:flags=area,lutrgb=r='{levels}':g='{levels}':b='{levels}',"
+            f"scale={WIDTH}:{HEIGHT}:flags=neighbor"
+        )
+    if settings.get("captions", True) is not False:
+        finish.append(f"subtitles={captions.name}")
+    finish.append("format=yuv420p")
+    parts.append(f"[{last}]{','.join(finish)}[video]")
     delay = int(NARRATION_DELAY * 1000)
     voice = f"[{count}:a]aresample=48000,adelay={delay}|{delay},apad"
     if music:
         parts.append(f"{voice}[voice]")
         parts.append(
-            f"[{count + 1}:a]aresample=48000,volume=0.12,afade=t=out:st={total - 1:.3f}:d=1[music]"
+            f"[{count + 1}:a]aresample=48000,volume={volume:.3f},afade=t=out:st={total - 1:.3f}:d=1[music]"
         )
         parts.append("[voice][music]amix=inputs=2:duration=first:normalize=0[audio]")
     else:

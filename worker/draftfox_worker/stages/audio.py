@@ -12,6 +12,8 @@ from typing import Any
 
 from ..context import StageContext, StageError
 from ..length import video_length
+from ..settings import caption_style, job_settings, voice_speed
+from ..settings import voice as voice_for
 from .script import write_script
 
 log = logging.getLogger("worker.audio")
@@ -85,15 +87,15 @@ def _escape(text: str) -> str:
 
 
 def caption_groups(words: list[dict[str, Any]], size: int = 3) -> list[dict[str, Any]]:
-    """2-3 words per caption, ending a group early after punctuation."""
+    """Up to `size` words per caption (3 unless the video says otherwise), ending a group early after punctuation."""
     groups: list[list[dict[str, Any]]] = [[]]
     for word in words:
         groups[-1].append(word)
-        if len(groups[-1]) >= size or (len(groups[-1]) >= 2 and re.search(r"[.,!?;:]$", word["word"])):
+        if len(groups[-1]) >= size or (size > 1 and len(groups[-1]) >= 2 and re.search(r"[.,!?;:]$", word["word"])):
             groups.append([])
     groups = [group for group in groups if group]
     # A lone last word joins the group before it.
-    if len(groups) > 1 and len(groups[-1]) == 1:
+    if size > 1 and len(groups) > 1 and len(groups[-1]) == 1:
         groups[-2].extend(groups.pop())
     result = []
     for index, group in enumerate(groups):
@@ -102,8 +104,10 @@ def caption_groups(words: list[dict[str, Any]], size: int = 3) -> list[dict[str,
     return result
 
 
-def write_ass(groups: list[dict[str, Any]], out: Path) -> None:
-    header = """[Script Info]
+def write_ass(groups: list[dict[str, Any]], out: Path, style: dict[str, Any] | None = None) -> None:
+    """style: the video's caption size, colour and position (settings.caption_style); the defaults otherwise."""
+    s = {"size": 92, "colour": "&H00FFFFFF", "alignment": 2, "margin": 520, **(style or {})}
+    header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
@@ -112,7 +116,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,Arial Black,92,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,3,2,80,80,520,1
+Style: Caption,Arial Black,{s["size"]},{s["colour"]},&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,3,{s["alignment"]},80,80,{s["margin"]},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -128,12 +132,12 @@ def run(ctx: StageContext) -> dict[str, Any]:
     narration = script.get("narration", "").strip()
     if not narration:
         raise StageError("The script has no narration.", retryable=False)
-    voice = ctx.config.get("VIDEO_VOICE", "bm_george")
-    base_speed = float(ctx.config.get("VIDEO_VOICE_SPEED", "0.9"))
+    voice = voice_for(ctx)
+    base_speed = voice_speed(ctx)
     speeds = [round(base_speed + step, 2) for step in SPEED_STEPS]
     whisper_model = ctx.config.get("VIDEO_WHISPER_MODEL", "base.en")
     wav = ctx.dir / "narration.wav"
-    length = video_length(ctx.config)
+    length = video_length(ctx.config, ctx.job)
 
     started = time.monotonic()
     seconds = 0.0
@@ -165,8 +169,8 @@ def run(ctx: StageContext) -> dict[str, Any]:
     if not words:
         raise StageError("Whisper found no words in the narration audio.")
     ass = ctx.dir / "captions.ass"
-    groups = caption_groups(words)
-    write_ass(groups, ass)
+    groups = caption_groups(words, int(job_settings(ctx).get("captionWords") or 3))
+    write_ass(groups, ass, caption_style(ctx))
     ctx.save_asset("captions", ass)
     ctx.progress(1, f"Narration {seconds:.1f} s, {len(words)} words timed")
     return {
